@@ -8,22 +8,42 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
     <style>
-        html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; display: flex; overflow: hidden; }
+        /* 1. NUCLEAR CSS RESET */
+        * { box-sizing: border-box; }
+        html, body { 
+            height: 100%; 
+            width: 100%; 
+            margin: 0; 
+            padding: 0; 
+            overflow: hidden; /* Stop scrolling */
+        }
         
+        body { 
+            display: flex; 
+            flex-direction: row; 
+        }
+        
+        /* 2. SIDEBAR FIXED WIDTH */
         #sidebar {
             width: 350px;
-            min-width: 350px;
+            height: 100vh; /* Full viewport height */
             background: #f8f9fa;
             padding: 20px;
-            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
             overflow-y: auto;
-            z-index: 2000;
-            display: flex;
-            flex-direction: column;
-            border-right: 1px solid #ccc;
+            border-right: 2px solid #ccc;
+            z-index: 9999; /* Always on top */
+            flex-shrink: 0; /* Never shrink */
         }
 
-        #map { flex-grow: 1; height: 100%; background-color: #e5e5e5; }
+        /* 3. MAP FORCED EXPANSION */
+        #map { 
+            flex-grow: 1; /* Take all remaining space */
+            height: 100vh; /* Force full height */
+            width: 100%; 
+            background-color: #e5e5e5;
+            /* DEBUG BORDER: If you don't see this, the div is hidden */
+            border: 5px solid red; 
+        }
 
         .card {
             background: white;
@@ -32,19 +52,16 @@
             border-radius: 8px;
             border: 1px solid #ddd;
             cursor: pointer;
-            transition: background 0.2s;
         }
         .card:hover { border-color: #007bff; background-color: #f0f8ff; }
         
         .status-box {
             padding: 10px;
             margin-bottom: 15px;
-            border-radius: 4px;
-            font-size: 11px;
-            font-family: monospace;
-            background: #e9ecef;
-            color: #333;
             border: 1px solid #ccc;
+            background: #fff;
+            font-family: monospace;
+            font-size: 11px;
         }
     </style>
 </head>
@@ -52,9 +69,9 @@
 
     <div id="sidebar">
         <h2>Syllabus Explorer</h2>
-        <div id="console-log" class="status-box">Connecting...</div>
+        <div id="console-log" class="status-box">Init...</div>
         <p>Found <span id="course-count">0</span> courses.</p>
-        <input type="text" id="search-box" placeholder="Search courses..." style="width:90%; padding:8px; margin-bottom:10px;">
+        <input type="text" id="search-box" placeholder="Search..." style="width:90%; padding:8px;">
         <div id="results-container"></div>
     </div>
 
@@ -73,39 +90,37 @@
         function log(msg) { consoleEl.innerHTML = msg; }
 
         // --------------------------------------------------------
-        // 2. INITIALIZE MAP
+        // 2. INITIALIZE MAP (Wait for DOM)
         // --------------------------------------------------------
-        const map = L.map('map').setView([39.8283, -98.5795], 4); 
+        // We set the view to the entire world to ensure tiles load
+        const map = L.map('map').setView([39.8, -98.5], 4); 
+        
         L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; OpenStreetMap'
+            attribution: '© OpenStreetMap'
         }).addTo(map);
+
         let markers = L.layerGroup().addTo(map);
 
+        // FORCE MAP RESIZE (Fixes grey tiles)
+        setTimeout(() => { map.invalidateSize(); }, 500);
+
         // --------------------------------------------------------
-        // 3. MAIN LOGIC (Simplified!)
+        // 3. MAIN LOGIC
         // --------------------------------------------------------
         try {
             const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
             
             async function loadData(searchQuery = '') {
-                log("Loading...");
+                log("Loading from Supabase...");
                 
-                // We query the VIEW, not the raw tables.
-                // The View already has 'lat' and 'lon' columns ready for us.
-                let query = supabase
-                    .from('syllabus_map_view')
-                    .select('*');
+                // Using the VIEW we created
+                let query = supabase.from('syllabus_map_view').select('*');
 
-                if (searchQuery) {
-                    query = query.ilike('title', `%${searchQuery}%`);
-                }
+                if (searchQuery) query = query.ilike('title', `%${searchQuery}%`);
 
                 const { data, error } = await query;
 
-                if (error) {
-                    log("Error: " + error.message);
-                    return;
-                }
+                if (error) { log("Error: " + error.message); return; }
 
                 document.getElementById('course-count').innerText = data.length;
                 log(`Loaded ${data.length} courses.`);
@@ -116,14 +131,20 @@
 
             function renderMap(data) {
                 markers.clearLayers();
+                let count = 0;
                 data.forEach(item => {
-                    // Check if lat/lon exist (no parsing needed!)
                     if (item.lat && item.lon) {
                         const m = L.marker([item.lat, item.lon])
                             .bindPopup(`<b>${item.course_code}</b><br>${item.university_name}`);
                         m.addTo(markers);
+                        count++;
                     }
                 });
+                if(count > 0) {
+                    // Fit map to show all markers
+                    const group = L.featureGroup(markers.getLayers());
+                    map.fitBounds(group.getBounds().pad(0.1));
+                }
             }
 
             function renderList(data) {
@@ -132,19 +153,14 @@
                 data.forEach(item => {
                     const div = document.createElement('div');
                     div.className = 'card';
-                    div.innerHTML = `
-                        <h3>${item.course_code}</h3>
-                        <p>${item.title}</p>
-                        <p><b>${item.university_name}</b></p>
-                    `;
+                    div.innerHTML = `<h3>${item.course_code}</h3><p>${item.university_name}</p>`;
                     div.onclick = () => {
                         if (item.lat && item.lon) {
                              map.flyTo([item.lat, item.lon], 12);
-                             markers.eachLayer(layer => {
-                                 const lL = layer.getLatLng();
-                                 if(Math.abs(lL.lat - item.lat) < 0.0001) {
-                                     layer.openPopup();
-                                 }
+                             // Force marker popup open
+                             markers.eachLayer(l => {
+                                 const ll = l.getLatLng();
+                                 if(Math.abs(ll.lat - item.lat) < 0.001) l.openPopup();
                              });
                         }
                     };
@@ -154,11 +170,10 @@
 
             document.getElementById('search-box').addEventListener('input', (e) => loadData(e.target.value));
             
-            // Start
             loadData();
 
         } catch (err) {
-            log("Critical Error: " + err.message);
+            log("JS Error: " + err.message);
         }
     </script>
 </body>
