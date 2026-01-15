@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Geospatial Syllabus Explorer (Debug Mode)</title>
+    <title>Geospatial Syllabus Explorer</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
@@ -19,7 +19,7 @@
             display: flex;
             flex-direction: column;
         }
-        #map { flex-grow: 1; height: 100%; background-color: #e5e5e5; } /* Grey background to see if container loads */
+        #map { flex-grow: 1; height: 100%; }
         .card {
             background: white;
             padding: 15px;
@@ -29,7 +29,7 @@
             cursor: pointer;
         }
         .card:hover { border-color: #007bff; }
-        .error-msg { color: red; font-weight: bold; border: 1px solid red; padding: 10px; background: #fff0f0; }
+        .error-area { color: red; padding: 10px; border: 1px solid red; background: #fff5f5; margin-bottom: 10px; display: none; }
         input { width: 90%; padding: 10px; margin-bottom: 15px; }
     </style>
 </head>
@@ -37,8 +37,7 @@
 
     <div id="sidebar">
         <h2>Syllabus Explorer</h2>
-        <div id="status-area" style="margin-bottom: 10px; font-size: 12px; color: blue;">Initializing...</div>
-        
+        <div id="error-box" class="error-area"></div>
         <p>Found <span id="course-count">0</span> courses.</p>
         <input type="text" id="search-box" placeholder="Type to search...">
         <div id="results-container"></div>
@@ -50,119 +49,125 @@
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 
     <script>
-        // Helper to show messages on screen
-        function logStatus(msg, isError = false) {
-            const el = document.getElementById('status-area');
-            el.innerHTML += `<br>${msg}`;
-            el.style.color = isError ? 'red' : 'blue';
-            if(isError) console.error(msg);
+        // --------------------------------------------------------
+        // 1. CONFIGURATION (PASTE KEYS HERE)
+        // --------------------------------------------------------
+        const SUPABASE_URL = 'https://ygzxhhmckfyeywdfrwcp.supabase.co'; 
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlnenhoaG1ja2Z5ZXl3ZGZyd2NwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0Nzc2MTAsImV4cCI6MjA4NDA1MzYxMH0.JrSW1-DyrduhK1_iAC-HgcwnxeDpzn98AVoriG0bTXw';
+        
+        // Initialize Supabase
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        // --------------------------------------------------------
+        // 2. INITIALIZE MAP
+        // --------------------------------------------------------
+        const map = L.map('map').setView([39.8283, -98.5795], 4); 
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap'
+        }).addTo(map);
+        let markers = L.layerGroup().addTo(map);
+
+        // --------------------------------------------------------
+        // 3. FETCH DATA (Fixed Logic)
+        // --------------------------------------------------------
+        async function loadData(searchQuery = '') {
+            const errBox = document.getElementById('error-box');
+            errBox.style.display = 'none';
+
+            // Query: Section -> Course -> University
+            // We use the "Dot Notation" to go deep: courses ( universities (...) )
+            let query = supabase
+                .from('course_sections')
+                .select(`
+                    id,
+                    delivery_format,
+                    courses!inner (
+                        title, 
+                        course_code,
+                        universities (
+                            name, 
+                            campus_location
+                        )
+                    ),
+                    instructors (full_name)
+                `);
+
+            if (searchQuery) {
+                query = query.ilike('courses.title', `%${searchQuery}%`);
+            }
+
+            const { data, error } = await query;
+
+            if (error) {
+                console.error(error);
+                errBox.innerText = "Error: " + error.message;
+                errBox.style.display = 'block';
+                return;
+            }
+
+            // Update UI
+            document.getElementById('course-count').innerText = data.length;
+            renderMap(data);
+            renderList(data);
         }
 
-        try {
-            // --------------------------------------------------------
-            // 1. CONFIGURATION
-            // --------------------------------------------------------
-            // ↓↓↓↓↓ PASTE YOUR KEYS INSIDE THE QUOTES BELOW ↓↓↓↓↓
-            const SUPABASE_URL = 'https://ygzxhhmckfyeywdfrwcp.supabase.co'; 
-            const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlnenhoaG1ja2Z5ZXl3ZGZyd2NwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0Nzc2MTAsImV4cCI6MjA4NDA1MzYxMH0.JrSW1-DyrduhK1_iAC-HgcwnxeDpzn98AVoriG0bTXw';
-            // ↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
-
-            if (SUPABASE_URL.includes('YOUR_SUPABASE')) {
-                logStatus("STOP: You did not replace the Supabase Keys in the code!", true);
-                alert("STOP: You need to edit the index.html file and paste your Supabase Keys where it says YOUR_SUPABASE_PROJECT_URL.");
-                throw new Error("Keys not set");
-            }
-
-            const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-            logStatus("1. Supabase Client created.");
-
-            // --------------------------------------------------------
-            // 2. INITIALIZE MAP
-            // --------------------------------------------------------
-            const map = L.map('map').setView([39.8283, -98.5795], 4); 
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-                attribution: '&copy; OpenStreetMap'
-            }).addTo(map);
-            let markers = L.layerGroup().addTo(map);
-            logStatus("2. Map loaded successfully.");
-
-            // --------------------------------------------------------
-            // 3. FETCH DATA
-            // --------------------------------------------------------
-            async function loadData(searchQuery = '') {
-                logStatus("3. Attempting to fetch data from Supabase...");
-                
-                let query = supabase
-                    .from('course_sections')
-                    .select(`
-                        id,
-                        courses!inner (title, course_code),
-                        universities!inner (name, campus_location),
-                        instructors (full_name)
-                    `);
-
-                if (searchQuery) {
-                    query = query.ilike('courses.title', `%${searchQuery}%`);
-                }
-
-                const { data, error } = await query;
-
-                if (error) {
-                    logStatus("ERROR connecting to database: " + error.message, true);
-                    alert("Database Error: " + error.message);
-                    return;
-                }
-
-                if (!data || data.length === 0) {
-                    logStatus("Success, but 0 records found. (Database might be empty?)", true);
-                } else {
-                    logStatus(`Success! Downloaded ${data.length} courses.`);
-                }
-
-                document.getElementById('course-count').innerText = data.length;
-                
-                // Draw Map Markers
-                markers.clearLayers();
-                data.forEach(item => {
-                    const loc = item.universities.campus_location; 
-                    if (loc) {
-                        const coords = loc.match(/POINT\(([^ ]+) ([^ ]+)\)/);
-                        if (coords) {
-                            const lat = parseFloat(coords[2]);
-                            const lon = parseFloat(coords[1]);
-                            L.marker([lat, lon])
-                                .bindPopup(`<b>${item.courses.course_code}</b><br>${item.universities.name}`)
-                                .addTo(markers);
-                        }
-                    }
-                });
-
-                // Draw List
-                const container = document.getElementById('results-container');
-                container.innerHTML = '';
-                data.forEach(item => {
-                    const div = document.createElement('div');
-                    div.className = 'card';
-                    div.innerHTML = `<strong>${item.courses.course_code}</strong><br>${item.courses.title}<br><small>${item.universities.name}</small>`;
-                    div.onclick = () => {
-                         const loc = item.universities.campus_location;
-                         if(loc) {
-                             const coords = loc.match(/POINT\(([^ ]+) ([^ ]+)\)/);
-                             map.flyTo([parseFloat(coords[2]), parseFloat(coords[1])], 12);
-                         }
-                    };
-                    container.appendChild(div);
-                });
-            }
-
-            document.getElementById('search-box').addEventListener('input', (e) => loadData(e.target.value));
+        function renderMap(data) {
+            markers.clearLayers();
             
-            // Start
-            loadData();
-
-        } catch (err) {
-            logStatus("CRITICAL ERROR: " + err.message, true);
+            data.forEach(item => {
+                // DATA PATH: item -> courses -> universities -> campus_location
+                const uni = item.courses.universities;
+                
+                if (uni && uni.campus_location) {
+                    const coords = uni.campus_location.match(/POINT\(([^ ]+) ([^ ]+)\)/);
+                    if (coords) {
+                        const lat = parseFloat(coords[2]);
+                        const lon = parseFloat(coords[1]);
+                        L.marker([lat, lon])
+                            .bindPopup(`<b>${item.courses.course_code}</b><br>${uni.name}`)
+                            .addTo(markers);
+                    }
+                }
+            });
         }
+
+        function renderList(data) {
+            const container = document.getElementById('results-container');
+            container.innerHTML = '';
+
+            data.forEach(item => {
+                const course = item.courses;
+                const uni = course.universities;
+                const inst = item.instructors;
+
+                const div = document.createElement('div');
+                div.className = 'card';
+                div.innerHTML = `
+                    <h3>${course.course_code}: ${course.title}</h3>
+                    <p><b>${uni ? uni.name : 'Unknown University'}</b></p>
+                    <p>Instructor: ${inst ? inst.full_name : 'TBD'}</p>
+                `;
+                
+                div.onclick = () => {
+                     if (uni && uni.campus_location) {
+                        const coords = uni.campus_location.match(/POINT\(([^ ]+) ([^ ]+)\)/);
+                        if (coords) {
+                            map.flyTo([parseFloat(coords[2]), parseFloat(coords[1])], 12);
+                        }
+                     }
+                };
+                container.appendChild(div);
+            });
+        }
+
+        // Search Listener
+        document.getElementById('search-box').addEventListener('input', (e) => {
+            loadData(e.target.value);
+        });
+
+        // Start
+        loadData();
+
     </script>
 </body>
 </html>
