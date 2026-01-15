@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Geospatial Syllabus Explorer</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        body { margin: 0; padding: 0; font-family: sans-serif; display: flex; height: 100vh; }
+        
+        /* The Sidebar for Searching */
+        #sidebar {
+            width: 350px;
+            background: #f8f9fa;
+            padding: 20px;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+            overflow-y: auto;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* The Map Container */
+        #map { flex-grow: 1; height: 100%; }
+        
+        /* Styling for the results */
+        .card {
+            background: white;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .card:hover { border-color: #007bff; transform: translateY(-2px); box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .card h3 { margin: 0 0 5px 0; font-size: 16px; color: #333; }
+        .card p { margin: 0; font-size: 14px; color: #666; }
+        
+        input {
+            width: 90%;
+            padding: 10px;
+            margin-bottom: 15px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="sidebar">
+        <h2>Syllabus Explorer</h2>
+        <p>Found <span id="course-count">0</span> courses.</p>
+        
+        <input type="text" id="search-box" placeholder="Search (e.g., Python, Cartography)...">
+        
+        <div id="results-container">
+            </div>
+    </div>
+
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+
+    <script>
+        // --------------------------------------------------------
+        // 1. CONFIGURATION (PASTE YOUR KEYS HERE)
+        // --------------------------------------------------------
+        const SUPABASE_URL = 'https://supabase.com/dashboard/project/ygzxhhmckfyeywdfrwcp'; 
+        const SUPABASE_KEY = 'sb_publishable_GEobZvITWRys53PE_yQJbA_Wx1hfqqq';
+        
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        // --------------------------------------------------------
+        // 2. INITIALIZE MAP
+        // --------------------------------------------------------
+        // Center on US by default
+        const map = L.map('map').setView([39.8283, -98.5795], 4); 
+
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap &copy; CARTO'
+        }).addTo(map);
+
+        let markers = L.layerGroup().addTo(map);
+
+        // --------------------------------------------------------
+        // 3. FETCH AND DISPLAY DATA
+        // --------------------------------------------------------
+        async function loadData(searchQuery = '') {
+            
+            // Complex Query: Join Universities, Courses, Instructors
+            let query = supabase
+                .from('course_sections')
+                .select(`
+                    id,
+                    semester,
+                    delivery_format,
+                    courses!inner (title, course_code),
+                    universities!inner (name, campus_location),
+                    instructors (full_name),
+                    syllabus_metadata (grading_policy, required_software)
+                `);
+
+            // Apply Search Filter if text exists
+            if (searchQuery) {
+                query = query.ilike('courses.title', `%${searchQuery}%`);
+            }
+
+            const { data, error } = await query;
+
+            if (error) {
+                console.error('Error:', error);
+                return;
+            }
+
+            // Update UI
+            document.getElementById('course-count').innerText = data.length;
+            renderMap(data);
+            renderList(data);
+        }
+
+        function renderMap(data) {
+            markers.clearLayers();
+            
+            data.forEach(item => {
+                // Extract coordinates from PostGIS "POINT(lon lat)" string
+                const loc = item.universities.campus_location; 
+                if (!loc) return;
+                
+                // Parse WKT format: POINT(-72.25 41.80)
+                const coords = loc.match(/POINT\(([^ ]+) ([^ ]+)\)/);
+                if (coords) {
+                    const lon = parseFloat(coords[1]);
+                    const lat = parseFloat(coords[2]);
+
+                    const marker = L.marker([lat, lon])
+                        .bindPopup(`<b>${item.courses.course_code}</b><br>${item.courses.title}<br>${item.universities.name}`);
+                    
+                    marker.addTo(markers);
+                }
+            });
+        }
+
+        function renderList(data) {
+            const container = document.getElementById('results-container');
+            container.innerHTML = '';
+
+            data.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'card';
+                div.innerHTML = `
+                    <h3>${item.courses.course_code}: ${item.courses.title}</h3>
+                    <p><b>${item.universities.name}</b></p>
+                    <p>Instructor: ${item.instructors ? item.instructors.full_name : 'TBD'}</p>
+                    <p>Format: ${item.delivery_format || 'N/A'}</p>
+                `;
+                
+                // Click card to zoom to map
+                div.onclick = () => {
+                    const loc = item.universities.campus_location;
+                    if (loc) {
+                        const coords = loc.match(/POINT\(([^ ]+) ([^ ]+)\)/);
+                        if (coords) {
+                            map.flyTo([parseFloat(coords[2]), parseFloat(coords[1])], 12);
+                        }
+                    }
+                };
+                
+                container.appendChild(div);
+            });
+        }
+
+        // --------------------------------------------------------
+        // 4. EVENT LISTENERS
+        // --------------------------------------------------------
+        document.getElementById('search-box').addEventListener('input', (e) => {
+            loadData(e.target.value);
+        });
+
+        // Load all data on startup
+        loadData();
+
+    </script>
+</body>
+</html>
