@@ -8,10 +8,8 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
     <style>
-        /* Force full height layout */
         html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; display: flex; overflow: hidden; }
         
-        /* SIDEBAR */
         #sidebar {
             width: 350px;
             min-width: 350px;
@@ -25,14 +23,8 @@
             border-right: 1px solid #ccc;
         }
 
-        /* MAP */
-        #map { 
-            flex-grow: 1; 
-            height: 100%; 
-            background-color: #e5e5e5; /* Grey placeholder */
-        }
+        #map { flex-grow: 1; height: 100%; background-color: #e5e5e5; }
 
-        /* CARDS */
         .card {
             background: white;
             padding: 15px;
@@ -43,10 +35,7 @@
             transition: background 0.2s;
         }
         .card:hover { border-color: #007bff; background-color: #f0f8ff; }
-        .card h3 { margin: 0 0 5px 0; font-size: 16px; color: #333; }
-        .card p { margin: 0; font-size: 13px; color: #666; }
-
-        /* DEBUG BOX */
+        
         .status-box {
             padding: 10px;
             margin-bottom: 15px;
@@ -65,12 +54,9 @@
 
     <div id="sidebar">
         <h2>Syllabus Explorer</h2>
-        
         <div id="console-log" class="status-box">Initializing...</div>
-        
         <p>Found <span id="course-count">0</span> courses.</p>
         <input type="text" id="search-box" placeholder="Search courses..." style="width:90%; padding:8px; margin-bottom:10px;">
-        
         <div id="results-container"></div>
     </div>
 
@@ -106,23 +92,49 @@
             attribution: '&copy; OpenStreetMap'
         }).addTo(map);
         let markers = L.layerGroup().addTo(map);
-        log("Map initialized.");
 
         // --------------------------------------------------------
-        // 4. MAIN LOGIC
+        // 4. ROBUST PARSER (THE FIX)
+        // --------------------------------------------------------
+        function parseCoordinates(locationString) {
+            if (!locationString) return null;
+            
+            // "Bulletproof" Method:
+            // 1. Remove everything that is NOT a number, dot, or minus sign.
+            // 2. Replace valid separators with spaces.
+            // 3. Split by space.
+            // Input: "POINT(-72.25 41.80)" -> "-72.25 41.80" -> [-72.25, 41.80]
+            
+            try {
+                // Remove letters and parens
+                const clean = locationString.replace(/[a-zA-Z\(\)]/g, ''); 
+                // Split by spaces or commas
+                const parts = clean.trim().split(/[\s,]+/); 
+                
+                if (parts.length >= 2) {
+                    const lon = parseFloat(parts[0]);
+                    const lat = parseFloat(parts[1]);
+                    
+                    if (!isNaN(lat) && !isNaN(lon)) {
+                        return { lat, lon };
+                    }
+                }
+            } catch (e) {
+                console.error("Parsing error", e);
+            }
+            return null;
+        }
+
+        // --------------------------------------------------------
+        // 5. MAIN LOGIC
         // --------------------------------------------------------
         try {
             const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
             
             async function loadData(searchQuery = '') {
                 log("Querying Supabase...");
-
-                // We ask the database for the location as text specifically (st_astext)
-                // to avoid parsing issues.
-                let query = supabase.rpc('get_course_data', { search_text: searchQuery || '' });
                 
-                // FALLBACK: Standard Query if RPC fails (Using standard select)
-                query = supabase
+                let query = supabase
                     .from('course_sections')
                     .select(`
                         id,
@@ -145,7 +157,7 @@
                     return;
                 }
 
-                log(`Loaded ${data.length} rows. Parsing locations...`, 'success');
+                log(`Loaded ${data.length} rows.`, 'success');
                 document.getElementById('course-count').innerText = data.length;
                 
                 renderMap(data);
@@ -158,41 +170,26 @@
 
                 data.forEach(item => {
                     const uni = item.courses.universities;
-                    
-                    // DIAGNOSTIC CHECK
-                    if (!uni) {
-                        log(`Warning: Course ${item.courses.course_code} has no university?`, 'error');
-                        return;
-                    }
-
-                    if (!uni.campus_location) {
-                        log(`Skipping ${uni.name}: Location is NULL`, 'error');
-                        return;
-                    }
-
-                    // Parse WKT: POINT(-96.3344 30.6187)
-                    // We accept standard space or comma separation just in case
-                    const coords = uni.campus_location.match(/POINT\(([^ ,]+)[ ,]+([^ ,]+)\)/);
-                    
-                    if (coords) {
-                        const lon = parseFloat(coords[1]);
-                        const lat = parseFloat(coords[2]);
+                    if (uni && uni.campus_location) {
                         
-                        // Create Marker
-                        const m = L.marker([lat, lon])
-                            .bindPopup(`<b>${item.courses.course_code}</b><br>${uni.name}`);
+                        // USE THE NEW PARSER
+                        const coords = parseCoordinates(uni.campus_location);
                         
-                        m.addTo(markers);
-                        validMarkers++;
-                    } else {
-                        log(`Parse Error: ${uni.name} data: ${uni.campus_location}`, 'error');
+                        if (coords) {
+                            const m = L.marker([coords.lat, coords.lon])
+                                .bindPopup(`<b>${item.courses.course_code}</b><br>${uni.name}`);
+                            m.addTo(markers);
+                            validMarkers++;
+                        } else {
+                            log(`Bad Coord Format: ${uni.campus_location}`, 'error');
+                        }
                     }
                 });
 
                 if (validMarkers > 0) {
-                    log(`Successfully added ${validMarkers} markers to map.`, 'success');
+                    log(`Map updated with ${validMarkers} pins.`, 'success');
                 } else {
-                    log("No valid markers found!", 'error');
+                    log("No valid markers to display.", 'error');
                 }
             }
 
@@ -208,29 +205,19 @@
                         <p>${item.courses.title}</p>
                         <p><b>${uni.name}</b></p>
                     `;
-                    
-                    // Click Event
                     div.onclick = () => {
-                        log(`Clicked ${item.courses.course_code}...`);
                         if (uni && uni.campus_location) {
-                             const coords = uni.campus_location.match(/POINT\(([^ ,]+)[ ,]+([^ ,]+)\)/);
+                             const coords = parseCoordinates(uni.campus_location);
                              if (coords) {
-                                 const lat = parseFloat(coords[2]);
-                                 const lon = parseFloat(coords[1]);
-                                 log(`Flying to ${lat}, ${lon}`);
-                                 map.flyTo([lat, lon], 12);
-                                 // Open the popup for this marker if found
+                                 map.flyTo([coords.lat, coords.lon], 12);
                                  markers.eachLayer(layer => {
                                      const lL = layer.getLatLng();
-                                     if(lL.lat === lat && lL.lng === lon) {
+                                     // Approximate match for float precision
+                                     if(Math.abs(lL.lat - coords.lat) < 0.0001) {
                                          layer.openPopup();
                                      }
                                  });
-                             } else {
-                                 log("Cannot fly: Invalid Coordinates", 'error');
                              }
-                        } else {
-                            log("Cannot fly: No Location Data", 'error');
                         }
                     };
                     container.appendChild(div);
