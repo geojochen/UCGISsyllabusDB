@@ -8,60 +8,87 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
     <style>
-        /* 1. NUCLEAR CSS RESET */
+        /* 1. LAYOUT RESET */
         * { box-sizing: border-box; }
-        html, body { 
-            height: 100%; 
-            width: 100%; 
-            margin: 0; 
-            padding: 0; 
-            overflow: hidden; /* Stop scrolling */
-        }
+        html, body { height: 100%; width: 100%; margin: 0; padding: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { display: flex; flex-direction: row; }
         
-        body { 
-            display: flex; 
-            flex-direction: row; 
-        }
-        
-        /* 2. SIDEBAR FIXED WIDTH */
+        /* 2. SIDEBAR STYLING */
         #sidebar {
-            width: 350px;
-            height: 100vh; /* Full viewport height */
-            background: #f8f9fa;
+            width: 360px;
+            height: 100vh;
+            background: #ffffff;
             padding: 20px;
             overflow-y: auto;
-            border-right: 2px solid #ccc;
-            z-index: 9999; /* Always on top */
-            flex-shrink: 0; /* Never shrink */
+            border-right: 1px solid #ddd;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 4px 0 10px rgba(0,0,0,0.05);
         }
 
-        /* 3. MAP FORCED EXPANSION */
-        #map { 
-            flex-grow: 1; /* Take all remaining space */
-            height: 100vh; /* Force full height */
-            width: 100%; 
-            background-color: #e5e5e5;
-            /* DEBUG BORDER: If you don't see this, the div is hidden */
-            border: 5px solid red; 
+        h2 { margin-top: 0; color: #2c3e50; font-size: 22px; }
+        
+        /* 3. FILTER MENU STYLING */
+        .filter-group { margin-bottom: 15px; }
+        .filter-group label { display: block; font-size: 12px; font-weight: bold; color: #7f8c8d; margin-bottom: 5px; }
+        
+        select, input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #dcdcdc;
+            border-radius: 6px;
+            font-size: 14px;
+            background: #f9f9f9;
+        }
+        select:focus, input:focus { outline: none; border-color: #3498db; background: #fff; }
+
+        /* 4. RESULTS LIST STYLING */
+        #results-header {
+            margin-top: 20px;
+            margin-bottom: 10px;
+            font-size: 13px;
+            color: #95a5a6;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
         }
 
         .card {
             background: white;
             padding: 15px;
-            margin-bottom: 10px;
+            margin-bottom: 12px;
             border-radius: 8px;
-            border: 1px solid #ddd;
+            border: 1px solid #e1e4e8;
             cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
         }
-        .card:hover { border-color: #007bff; background-color: #f0f8ff; }
-        
-        .status-box {
-            padding: 10px;
-            margin-bottom: 15px;
-            border: 1px solid #ccc;
-            background: #fff;
-            font-family: monospace;
+        .card:hover { 
+            border-color: #3498db; 
+            transform: translateY(-2px); 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08); 
+        }
+        .card h3 { margin: 0 0 6px 0; font-size: 16px; color: #2c3e50; }
+        .card p { margin: 0 0 4px 0; font-size: 13px; color: #57606a; }
+        .card .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            background: #e1f5fe;
+            color: #039be5;
+            border-radius: 12px;
             font-size: 11px;
+            font-weight: 600;
+            margin-top: 6px;
+        }
+
+        /* 5. MAP STYLING (No Red Border!) */
+        #map { 
+            flex-grow: 1; 
+            height: 100vh; 
+            width: 100%; 
+            background-color: #e5e5e5; 
         }
     </style>
 </head>
@@ -69,9 +96,32 @@
 
     <div id="sidebar">
         <h2>Syllabus Explorer</h2>
-        <div id="console-log" class="status-box">Init...</div>
-        <p>Found <span id="course-count">0</span> courses.</p>
-        <input type="text" id="search-box" placeholder="Search..." style="width:90%; padding:8px;">
+        
+        <div class="filter-group">
+            <label>SEARCH KEYWORDS</label>
+            <input type="text" id="search-box" placeholder="e.g. Python, Remote Sensing...">
+        </div>
+
+        <div class="filter-group">
+            <label>UNIVERSITY</label>
+            <select id="uni-filter">
+                <option value="all">All Universities</option>
+                </select>
+        </div>
+
+        <div class="filter-group">
+            <label>DELIVERY FORMAT</label>
+            <select id="format-filter">
+                <option value="all">Any Format</option>
+                <option value="In-Person">In-Person</option>
+                <option value="Online">Online / Asynchronous</option>
+            </select>
+        </div>
+
+        <div id="results-header">
+            Showing <span id="course-count">0</span> Courses
+        </div>
+        
         <div id="results-container"></div>
     </div>
 
@@ -85,95 +135,135 @@
         // 1. CONFIGURATION
         // --------------------------------------------------------
         const SUPABASE_URL = 'https://ygzxhhmckfyeywdfrwcp.supabase.co'; 
-        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlnenhoaG1ja2Z5ZXl3ZGZyd2NwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0Nzc2MTAsImV4cCI6MjA4NDA1MzYxMH0.JrSW1-DyrduhK1_iAC-HgcwnxeDpzn98AVoriG0bTXw';        
-        const consoleEl = document.getElementById('console-log');
-        function log(msg) { consoleEl.innerHTML = msg; }
-
-        // --------------------------------------------------------
-        // 2. INITIALIZE MAP (Wait for DOM)
-        // --------------------------------------------------------
-        // We set the view to the entire world to ensure tiles load
-        const map = L.map('map').setView([39.8, -98.5], 4); 
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlnenhoaG1ja2Z5ZXl3ZGZyd2NwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0Nzc2MTAsImV4cCI6MjA4NDA1MzYxMH0.JrSW1-DyrduhK1_iAC-HgcwnxeDpzn98AVoriG0bTXw';
         
+        // --------------------------------------------------------
+        // 2. INITIALIZE MAP
+        // --------------------------------------------------------
+        const map = L.map('map').setView([39.8, -98.5], 4); 
         L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
             attribution: '© OpenStreetMap'
         }).addTo(map);
-
         let markers = L.layerGroup().addTo(map);
 
-        // FORCE MAP RESIZE (Fixes grey tiles)
+        // Force resize to prevent grey tiles
         setTimeout(() => { map.invalidateSize(); }, 500);
 
         // --------------------------------------------------------
-        // 3. MAIN LOGIC
+        // 3. MAIN APP LOGIC
         // --------------------------------------------------------
         try {
             const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-            
-            async function loadData(searchQuery = '') {
-                log("Loading from Supabase...");
+            let globalData = []; // Store data locally to make filtering instant
+
+            async function init() {
+                // 1. Fetch ALL data once (Efficient for < 1000 rows)
+                const { data, error } = await supabase.from('syllabus_map_view').select('*');
                 
-                // Using the VIEW we created
-                let query = supabase.from('syllabus_map_view').select('*');
-
-                if (searchQuery) query = query.ilike('title', `%${searchQuery}%`);
-
-                const { data, error } = await query;
-
-                if (error) { log("Error: " + error.message); return; }
-
-                document.getElementById('course-count').innerText = data.length;
-                log(`Loaded ${data.length} courses.`);
+                if (error) { console.error(error); return; }
                 
-                renderMap(data);
-                renderList(data);
+                globalData = data;
+                
+                // 2. Populate University Dropdown dynamically
+                populateUniDropdown(data);
+
+                // 3. Initial Render
+                applyFilters();
             }
 
-            function renderMap(data) {
-                markers.clearLayers();
-                let count = 0;
-                data.forEach(item => {
-                    if (item.lat && item.lon) {
-                        const m = L.marker([item.lat, item.lon])
-                            .bindPopup(`<b>${item.course_code}</b><br>${item.university_name}`);
-                        m.addTo(markers);
-                        count++;
-                    }
+            function populateUniDropdown(data) {
+                const uniSelect = document.getElementById('uni-filter');
+                // Get unique university names
+                const unis = [...new Set(data.map(item => item.university_name))].sort();
+                
+                unis.forEach(uni => {
+                    const option = document.createElement('option');
+                    option.value = uni;
+                    option.innerText = uni;
+                    uniSelect.appendChild(option);
                 });
-                if(count > 0) {
-                    // Fit map to show all markers
-                    const group = L.featureGroup(markers.getLayers());
-                    map.fitBounds(group.getBounds().pad(0.1));
-                }
             }
 
-            function renderList(data) {
+            function applyFilters() {
+                // Get current values from UI
+                const search = document.getElementById('search-box').value.toLowerCase();
+                const selectedUni = document.getElementById('uni-filter').value;
+                const selectedFormat = document.getElementById('format-filter').value;
+
+                // Filter the global data
+                const filtered = globalData.filter(item => {
+                    const matchSearch = (item.title && item.title.toLowerCase().includes(search)) || 
+                                        (item.course_code && item.course_code.toLowerCase().includes(search));
+                    
+                    const matchUni = selectedUni === 'all' || item.university_name === selectedUni;
+                    
+                    // Fuzzy match for format (e.g., "Online Asynchronous" matches "Online")
+                    const matchFormat = selectedFormat === 'all' || 
+                                        (item.delivery_format && item.delivery_format.includes(selectedFormat));
+
+                    return matchSearch && matchUni && matchFormat;
+                });
+
+                updateUI(filtered);
+            }
+
+            function updateUI(data) {
+                document.getElementById('course-count').innerText = data.length;
+                markers.clearLayers();
                 const container = document.getElementById('results-container');
                 container.innerHTML = '';
+
+                let bounds = L.latLngBounds(); // To auto-zoom map
+
                 data.forEach(item => {
+                    // 1. Add Marker to Map
+                    if (item.lat && item.lon) {
+                        const m = L.marker([item.lat, item.lon])
+                            .bindPopup(`<b>${item.course_code}</b><br>${item.title}<br>${item.university_name}`);
+                        m.addTo(markers);
+                        bounds.extend([item.lat, item.lon]);
+                    }
+
+                    // 2. Add Card to Sidebar
                     const div = document.createElement('div');
                     div.className = 'card';
-                    div.innerHTML = `<h3>${item.course_code}</h3><p>${item.university_name}</p>`;
+                    div.innerHTML = `
+                        <h3>${item.course_code}</h3>
+                        <p style="font-weight:bold; color:#333;">${item.title}</p>
+                        <p>${item.university_name}</p>
+                        <div class="badge">${item.delivery_format || 'Format N/A'}</div>
+                    `;
+                    
                     div.onclick = () => {
                         if (item.lat && item.lon) {
-                             map.flyTo([item.lat, item.lon], 12);
-                             // Force marker popup open
+                             map.flyTo([item.lat, item.lon], 14);
                              markers.eachLayer(l => {
                                  const ll = l.getLatLng();
-                                 if(Math.abs(ll.lat - item.lat) < 0.001) l.openPopup();
+                                 if(Math.abs(ll.lat - item.lat) < 0.0001) l.openPopup();
                              });
                         }
                     };
                     container.appendChild(div);
                 });
+
+                // Auto-zoom map to show all results (if there are any)
+                if (data.length > 0 && bounds.isValid()) {
+                    map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12 });
+                } else if (data.length === 0) {
+                    container.innerHTML = '<p style="text-align:center; color:#999; margin-top:20px;">No courses found matching criteria.</p>';
+                }
             }
 
-            document.getElementById('search-box').addEventListener('input', (e) => loadData(e.target.value));
-            
-            loadData();
+            // Event Listeners for Filters
+            document.getElementById('search-box').addEventListener('input', applyFilters);
+            document.getElementById('uni-filter').addEventListener('change', applyFilters);
+            document.getElementById('format-filter').addEventListener('change', applyFilters);
+
+            // Start the App
+            init();
 
         } catch (err) {
-            log("JS Error: " + err.message);
+            console.error(err);
         }
     </script>
 </body>
