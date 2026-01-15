@@ -42,11 +42,9 @@
             border-radius: 4px;
             font-size: 11px;
             font-family: monospace;
-            background: #333;
-            color: #0f0;
-            border: 1px solid #000;
-            max-height: 150px;
-            overflow-y: auto;
+            background: #e9ecef;
+            color: #333;
+            border: 1px solid #ccc;
         }
     </style>
 </head>
@@ -54,7 +52,7 @@
 
     <div id="sidebar">
         <h2>Syllabus Explorer</h2>
-        <div id="console-log" class="status-box">Initializing...</div>
+        <div id="console-log" class="status-box">Connecting...</div>
         <p>Found <span id="course-count">0</span> courses.</p>
         <input type="text" id="search-box" placeholder="Search courses..." style="width:90%; padding:8px; margin-bottom:10px;">
         <div id="results-container"></div>
@@ -71,21 +69,11 @@
         // --------------------------------------------------------
         const SUPABASE_URL = 'https://ygzxhhmckfyeywdfrwcp.supabase.co'; 
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlnenhoaG1ja2Z5ZXl3ZGZyd2NwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0Nzc2MTAsImV4cCI6MjA4NDA1MzYxMH0.JrSW1-DyrduhK1_iAC-HgcwnxeDpzn98AVoriG0bTXw';        
-        // --------------------------------------------------------
-        // 2. LOGGING HELPER
-        // --------------------------------------------------------
         const consoleEl = document.getElementById('console-log');
-        function log(msg, type='info') {
-            const line = document.createElement('div');
-            line.innerText = `> ${msg}`;
-            if(type==='error') line.style.color = '#ff5555';
-            if(type==='success') line.style.color = '#55ff55';
-            consoleEl.appendChild(line);
-            consoleEl.scrollTop = consoleEl.scrollHeight;
-        }
+        function log(msg) { consoleEl.innerHTML = msg; }
 
         // --------------------------------------------------------
-        // 3. INITIALIZE MAP
+        // 2. INITIALIZE MAP
         // --------------------------------------------------------
         const map = L.map('map').setView([39.8283, -98.5795], 4); 
         L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
@@ -94,71 +82,33 @@
         let markers = L.layerGroup().addTo(map);
 
         // --------------------------------------------------------
-        // 4. ROBUST PARSER (THE FIX)
-        // --------------------------------------------------------
-        function parseCoordinates(locationString) {
-            if (!locationString) return null;
-            
-            // "Bulletproof" Method:
-            // 1. Remove everything that is NOT a number, dot, or minus sign.
-            // 2. Replace valid separators with spaces.
-            // 3. Split by space.
-            // Input: "POINT(-72.25 41.80)" -> "-72.25 41.80" -> [-72.25, 41.80]
-            
-            try {
-                // Remove letters and parens
-                const clean = locationString.replace(/[a-zA-Z\(\)]/g, ''); 
-                // Split by spaces or commas
-                const parts = clean.trim().split(/[\s,]+/); 
-                
-                if (parts.length >= 2) {
-                    const lon = parseFloat(parts[0]);
-                    const lat = parseFloat(parts[1]);
-                    
-                    if (!isNaN(lat) && !isNaN(lon)) {
-                        return { lat, lon };
-                    }
-                }
-            } catch (e) {
-                console.error("Parsing error", e);
-            }
-            return null;
-        }
-
-        // --------------------------------------------------------
-        // 5. MAIN LOGIC
+        // 3. MAIN LOGIC (Simplified!)
         // --------------------------------------------------------
         try {
             const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
             
             async function loadData(searchQuery = '') {
-                log("Querying Supabase...");
+                log("Loading...");
                 
+                // We query the VIEW, not the raw tables.
+                // The View already has 'lat' and 'lon' columns ready for us.
                 let query = supabase
-                    .from('course_sections')
-                    .select(`
-                        id,
-                        courses!inner (
-                            title, 
-                            course_code, 
-                            universities!inner(name, campus_location)
-                        ),
-                        instructors (full_name)
-                    `);
+                    .from('syllabus_map_view')
+                    .select('*');
 
                 if (searchQuery) {
-                    query = query.ilike('courses.title', `%${searchQuery}%`);
+                    query = query.ilike('title', `%${searchQuery}%`);
                 }
 
                 const { data, error } = await query;
 
                 if (error) {
-                    log("DB Error: " + error.message, 'error');
+                    log("Error: " + error.message);
                     return;
                 }
 
-                log(`Loaded ${data.length} rows.`, 'success');
                 document.getElementById('course-count').innerText = data.length;
+                log(`Loaded ${data.length} courses.`);
                 
                 renderMap(data);
                 renderList(data);
@@ -166,58 +116,36 @@
 
             function renderMap(data) {
                 markers.clearLayers();
-                let validMarkers = 0;
-
                 data.forEach(item => {
-                    const uni = item.courses.universities;
-                    if (uni && uni.campus_location) {
-                        
-                        // USE THE NEW PARSER
-                        const coords = parseCoordinates(uni.campus_location);
-                        
-                        if (coords) {
-                            const m = L.marker([coords.lat, coords.lon])
-                                .bindPopup(`<b>${item.courses.course_code}</b><br>${uni.name}`);
-                            m.addTo(markers);
-                            validMarkers++;
-                        } else {
-                            log(`Bad Coord Format: ${uni.campus_location}`, 'error');
-                        }
+                    // Check if lat/lon exist (no parsing needed!)
+                    if (item.lat && item.lon) {
+                        const m = L.marker([item.lat, item.lon])
+                            .bindPopup(`<b>${item.course_code}</b><br>${item.university_name}`);
+                        m.addTo(markers);
                     }
                 });
-
-                if (validMarkers > 0) {
-                    log(`Map updated with ${validMarkers} pins.`, 'success');
-                } else {
-                    log("No valid markers to display.", 'error');
-                }
             }
 
             function renderList(data) {
                 const container = document.getElementById('results-container');
                 container.innerHTML = '';
                 data.forEach(item => {
-                    const uni = item.courses.universities;
                     const div = document.createElement('div');
                     div.className = 'card';
                     div.innerHTML = `
-                        <h3>${item.courses.course_code}</h3>
-                        <p>${item.courses.title}</p>
-                        <p><b>${uni.name}</b></p>
+                        <h3>${item.course_code}</h3>
+                        <p>${item.title}</p>
+                        <p><b>${item.university_name}</b></p>
                     `;
                     div.onclick = () => {
-                        if (uni && uni.campus_location) {
-                             const coords = parseCoordinates(uni.campus_location);
-                             if (coords) {
-                                 map.flyTo([coords.lat, coords.lon], 12);
-                                 markers.eachLayer(layer => {
-                                     const lL = layer.getLatLng();
-                                     // Approximate match for float precision
-                                     if(Math.abs(lL.lat - coords.lat) < 0.0001) {
-                                         layer.openPopup();
-                                     }
-                                 });
-                             }
+                        if (item.lat && item.lon) {
+                             map.flyTo([item.lat, item.lon], 12);
+                             markers.eachLayer(layer => {
+                                 const lL = layer.getLatLng();
+                                 if(Math.abs(lL.lat - item.lat) < 0.0001) {
+                                     layer.openPopup();
+                                 }
+                             });
                         }
                     };
                     container.appendChild(div);
@@ -230,7 +158,7 @@
             loadData();
 
         } catch (err) {
-            log("CRITICAL: " + err.message, 'error');
+            log("Critical Error: " + err.message);
         }
     </script>
 </body>
