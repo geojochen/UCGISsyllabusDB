@@ -8,31 +8,31 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
     <style>
-        /* Force full height */
-        html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; display: flex; }
+        /* Force full height layout */
+        html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; display: flex; overflow: hidden; }
         
-        /* SIDEBAR STYLES */
+        /* SIDEBAR */
         #sidebar {
             width: 350px;
-            min-width: 350px; /* Force width */
+            min-width: 350px;
             background: #f8f9fa;
             padding: 20px;
             box-shadow: 2px 0 5px rgba(0,0,0,0.1);
             overflow-y: auto;
-            z-index: 2000; /* Sit on top of map */
+            z-index: 2000;
             display: flex;
             flex-direction: column;
+            border-right: 1px solid #ccc;
         }
 
-        /* MAP STYLES */
+        /* MAP */
         #map { 
             flex-grow: 1; 
             height: 100%; 
-            width: 100%; 
-            background-color: #aad3df; /* Ocean color (shows if map tiles fail) */
+            background-color: #e5e5e5; /* Grey placeholder */
         }
 
-        /* CARD STYLES */
+        /* CARDS */
         .card {
             background: white;
             padding: 15px;
@@ -40,17 +40,24 @@
             border-radius: 8px;
             border: 1px solid #ddd;
             cursor: pointer;
+            transition: background 0.2s;
         }
         .card:hover { border-color: #007bff; background-color: #f0f8ff; }
-        
-        /* LOGGING STYLES */
+        .card h3 { margin: 0 0 5px 0; font-size: 16px; color: #333; }
+        .card p { margin: 0; font-size: 13px; color: #666; }
+
+        /* DEBUG BOX */
         .status-box {
             padding: 10px;
             margin-bottom: 15px;
             border-radius: 4px;
-            font-size: 12px;
-            background: #e9ecef;
-            border: 1px solid #ced4da;
+            font-size: 11px;
+            font-family: monospace;
+            background: #333;
+            color: #0f0;
+            border: 1px solid #000;
+            max-height: 150px;
+            overflow-y: auto;
         }
     </style>
 </head>
@@ -59,7 +66,7 @@
     <div id="sidebar">
         <h2>Syllabus Explorer</h2>
         
-        <div id="status-msg" class="status-box">Status: Connecting...</div>
+        <div id="console-log" class="status-box">Initializing...</div>
         
         <p>Found <span id="course-count">0</span> courses.</p>
         <input type="text" id="search-box" placeholder="Search courses..." style="width:90%; padding:8px; margin-bottom:10px;">
@@ -77,38 +84,53 @@
         // 1. CONFIGURATION
         // --------------------------------------------------------
         const SUPABASE_URL = 'https://ygzxhhmckfyeywdfrwcp.supabase.co'; 
-        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlnenhoaG1ja2Z5ZXl3ZGZyd2NwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0Nzc2MTAsImV4cCI6MjA4NDA1MzYxMH0.JrSW1-DyrduhK1_iAC-HgcwnxeDpzn98AVoriG0bTXw';
-        
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlnenhoaG1ja2Z5ZXl3ZGZyd2NwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0Nzc2MTAsImV4cCI6MjA4NDA1MzYxMH0.JrSW1-DyrduhK1_iAC-HgcwnxeDpzn98AVoriG0bTXw';        
         // --------------------------------------------------------
-        // 2. LOGIC
+        // 2. LOGGING HELPER
         // --------------------------------------------------------
-        const statusEl = document.getElementById('status-msg');
-        
-        function updateStatus(msg, color='black') {
-            statusEl.innerHTML = msg;
-            statusEl.style.color = color;
-            if(color === 'red') statusEl.style.fontWeight = 'bold';
+        const consoleEl = document.getElementById('console-log');
+        function log(msg, type='info') {
+            const line = document.createElement('div');
+            line.innerText = `> ${msg}`;
+            if(type==='error') line.style.color = '#ff5555';
+            if(type==='success') line.style.color = '#55ff55';
+            consoleEl.appendChild(line);
+            consoleEl.scrollTop = consoleEl.scrollHeight;
         }
 
-        // Initialize Map immediately (so you see tiles even if data fails)
+        // --------------------------------------------------------
+        // 3. INITIALIZE MAP
+        // --------------------------------------------------------
         const map = L.map('map').setView([39.8283, -98.5795], 4); 
         L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
             attribution: '&copy; OpenStreetMap'
         }).addTo(map);
         let markers = L.layerGroup().addTo(map);
+        log("Map initialized.");
 
+        // --------------------------------------------------------
+        // 4. MAIN LOGIC
+        // --------------------------------------------------------
         try {
             const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
             
             async function loadData(searchQuery = '') {
-                updateStatus("Querying Database...", "blue");
+                log("Querying Supabase...");
 
-                // Note: We use !inner to ensure we only get valid linked data
-                let query = supabase
+                // We ask the database for the location as text specifically (st_astext)
+                // to avoid parsing issues.
+                let query = supabase.rpc('get_course_data', { search_text: searchQuery || '' });
+                
+                // FALLBACK: Standard Query if RPC fails (Using standard select)
+                query = supabase
                     .from('course_sections')
                     .select(`
                         id,
-                        courses!inner (title, course_code, universities!inner(name, campus_location)),
+                        courses!inner (
+                            title, 
+                            course_code, 
+                            universities!inner(name, campus_location)
+                        ),
                         instructors (full_name)
                     `);
 
@@ -119,50 +141,96 @@
                 const { data, error } = await query;
 
                 if (error) {
-                    updateStatus("DB ERROR: " + error.message, "red");
+                    log("DB Error: " + error.message, 'error');
                     return;
                 }
 
-                if (!data || data.length === 0) {
-                    updateStatus("Connected, but found 0 rows. <br>Did you run the UNLOCK SQL script?", "red");
-                } else {
-                    updateStatus(`Success! Loaded ${data.length} courses.`, "green");
-                }
-
-                document.getElementById('course-count').innerText = data ? data.length : 0;
-                renderMap(data || []);
-                renderList(data || []);
+                log(`Loaded ${data.length} rows. Parsing locations...`, 'success');
+                document.getElementById('course-count').innerText = data.length;
+                
+                renderMap(data);
+                renderList(data);
             }
 
             function renderMap(data) {
                 markers.clearLayers();
+                let validMarkers = 0;
+
                 data.forEach(item => {
                     const uni = item.courses.universities;
-                    if (uni && uni.campus_location) {
-                        const coords = uni.campus_location.match(/POINT\(([^ ]+) ([^ ]+)\)/);
-                        if (coords) {
-                            const lat = parseFloat(coords[2]);
-                            const lon = parseFloat(coords[1]);
-                            L.marker([lat, lon])
-                                .bindPopup(`<b>${item.courses.course_code}</b><br>${uni.name}`)
-                                .addTo(markers);
-                        }
+                    
+                    // DIAGNOSTIC CHECK
+                    if (!uni) {
+                        log(`Warning: Course ${item.courses.course_code} has no university?`, 'error');
+                        return;
+                    }
+
+                    if (!uni.campus_location) {
+                        log(`Skipping ${uni.name}: Location is NULL`, 'error');
+                        return;
+                    }
+
+                    // Parse WKT: POINT(-96.3344 30.6187)
+                    // We accept standard space or comma separation just in case
+                    const coords = uni.campus_location.match(/POINT\(([^ ,]+)[ ,]+([^ ,]+)\)/);
+                    
+                    if (coords) {
+                        const lon = parseFloat(coords[1]);
+                        const lat = parseFloat(coords[2]);
+                        
+                        // Create Marker
+                        const m = L.marker([lat, lon])
+                            .bindPopup(`<b>${item.courses.course_code}</b><br>${uni.name}`);
+                        
+                        m.addTo(markers);
+                        validMarkers++;
+                    } else {
+                        log(`Parse Error: ${uni.name} data: ${uni.campus_location}`, 'error');
                     }
                 });
+
+                if (validMarkers > 0) {
+                    log(`Successfully added ${validMarkers} markers to map.`, 'success');
+                } else {
+                    log("No valid markers found!", 'error');
+                }
             }
 
             function renderList(data) {
                 const container = document.getElementById('results-container');
                 container.innerHTML = '';
                 data.forEach(item => {
+                    const uni = item.courses.universities;
                     const div = document.createElement('div');
                     div.className = 'card';
-                    div.innerHTML = `<strong>${item.courses.course_code}</strong><br>${item.courses.title}<br><small>${item.courses.universities.name}</small>`;
+                    div.innerHTML = `
+                        <h3>${item.courses.course_code}</h3>
+                        <p>${item.courses.title}</p>
+                        <p><b>${uni.name}</b></p>
+                    `;
+                    
+                    // Click Event
                     div.onclick = () => {
-                        const loc = item.courses.universities.campus_location;
-                        if(loc) {
-                             const coords = loc.match(/POINT\(([^ ]+) ([^ ]+)\)/);
-                             map.flyTo([parseFloat(coords[2]), parseFloat(coords[1])], 12);
+                        log(`Clicked ${item.courses.course_code}...`);
+                        if (uni && uni.campus_location) {
+                             const coords = uni.campus_location.match(/POINT\(([^ ,]+)[ ,]+([^ ,]+)\)/);
+                             if (coords) {
+                                 const lat = parseFloat(coords[2]);
+                                 const lon = parseFloat(coords[1]);
+                                 log(`Flying to ${lat}, ${lon}`);
+                                 map.flyTo([lat, lon], 12);
+                                 // Open the popup for this marker if found
+                                 markers.eachLayer(layer => {
+                                     const lL = layer.getLatLng();
+                                     if(lL.lat === lat && lL.lng === lon) {
+                                         layer.openPopup();
+                                     }
+                                 });
+                             } else {
+                                 log("Cannot fly: Invalid Coordinates", 'error');
+                             }
+                        } else {
+                            log("Cannot fly: No Location Data", 'error');
                         }
                     };
                     container.appendChild(div);
@@ -171,11 +239,11 @@
 
             document.getElementById('search-box').addEventListener('input', (e) => loadData(e.target.value));
             
-            // Initial Load
+            // Start
             loadData();
 
         } catch (err) {
-            updateStatus("CRITICAL: " + err.message, "red");
+            log("CRITICAL: " + err.message, 'error');
         }
     </script>
 </body>
