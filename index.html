@@ -9,17 +9,17 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <style>
-        /* BASE STYLES */
+        /* RESET & LAYOUT */
         * { box-sizing: border-box; }
-        html, body { height: 100%; width: 100%; margin: 0; padding: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        html, body { height: 100%; width: 100%; margin: 0; padding: 0; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
         body { display: flex; flex-direction: row; }
         
         /* SIDEBAR */
         #sidebar {
-            width: 400px;
-            min-width: 400px;
+            width: 420px;
+            min-width: 420px;
             height: 100vh;
-            background: #ffffff;
+            background: #fff;
             display: flex;
             flex-direction: column;
             border-right: 1px solid #ccc;
@@ -27,17 +27,12 @@
             box-shadow: 4px 0 15px rgba(0,0,0,0.1);
         }
 
-        /* HEADER */
-        #sidebar-header {
-            padding: 20px;
-            background: #f8f9fa;
-            border-bottom: 1px solid #e9ecef;
-        }
+        #sidebar-header { padding: 20px; background: #f8f9fa; border-bottom: 1px solid #e9ecef; }
         h2 { margin: 0 0 10px 0; font-size: 20px; color: #2c3e50; }
 
-        /* DIAGNOSTIC PANEL */
+        /* STATUS PANEL */
         #status-panel {
-            font-size: 12px;
+            font-size: 11px;
             padding: 10px;
             background: #e3f2fd;
             color: #0d47a1;
@@ -45,17 +40,18 @@
             border-radius: 4px;
             margin-bottom: 15px;
             font-family: monospace;
+            white-space: pre-wrap;
         }
         #status-panel.error { background: #ffebee; color: #c62828; border-color: #ef5350; }
+        #status-panel.success { background: #e8f5e9; color: #2e7d32; border-color: #a5d6a7; }
 
         /* FILTERS */
         .filter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
         select, input { width: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 4px; font-size: 13px; }
 
-        /* RESULTS LIST */
+        /* RESULTS */
         #results-area { flex-grow: 1; overflow-y: auto; padding: 15px; background: #fdfdfd; }
 
-        /* CARDS */
         .card {
             background: white;
             border: 1px solid #e1e4e8;
@@ -64,33 +60,32 @@
             transition: all 0.2s;
             overflow: hidden;
         }
-        .card:hover { border-color: #3498db; box-shadow: 0 4px 8px rgba(0,0,0,0.05); }
+        .card:hover { border-color: #3498db; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
         
-        .card-header { padding: 15px; cursor: pointer; display: flex; justify-content: space-between; align-items: flex-start; }
-        .card h3 { margin: 0; font-size: 16px; color: #2c3e50; font-weight: 600; }
-        .card p { margin: 4px 0 0; font-size: 13px; color: #666; }
-        .uni-tag { display: inline-block; font-size: 11px; font-weight: bold; color: #3498db; margin-top: 5px; text-transform: uppercase; }
+        .card-header { padding: 12px; cursor: pointer; display: flex; justify-content: space-between; align-items: flex-start; }
+        .card h3 { margin: 0; font-size: 15px; color: #2c3e50; font-weight: 700; }
+        .card p { margin: 3px 0 0; font-size: 13px; color: #555; }
+        .uni-tag { display: inline-block; font-size: 11px; color: #3498db; font-weight: bold; margin-top: 5px; text-transform: uppercase; }
 
-        /* EXPANDED DETAILS */
-        .card-details { display: none; padding: 0 15px 15px 15px; background: #fafbfc; border-top: 1px solid #eee; font-size: 13px; color: #444; }
+        /* DETAILS */
+        .card-details { display: none; padding: 0 12px 12px 12px; background: #fafbfc; border-top: 1px solid #eee; font-size: 13px; color: #444; }
         .card.active .card-details { display: block; }
         .card.active { border-color: #3498db; }
         
-        .detail-row { margin-top: 10px; }
-        .label { font-weight: bold; color: #555; display: block; font-size: 11px; margin-bottom: 2px; }
+        .detail-row { margin-top: 8px; }
+        .label { font-weight: bold; color: #333; display: block; font-size: 11px; text-transform: uppercase; margin-bottom: 2px; }
 
         /* PDF BUTTON */
         .pdf-btn {
-            display: inline-flex; align-items: center; gap: 6px;
+            display: inline-flex; align-items: center; gap: 5px;
             background: #e74c3c; color: white; padding: 6px 12px; border-radius: 4px;
-            text-decoration: none; font-size: 12px; font-weight: bold; margin-top: 15px;
-            transition: background 0.2s;
+            text-decoration: none; font-size: 12px; font-weight: bold; margin-top: 10px;
         }
         .pdf-btn:hover { background: #c0392b; }
 
         /* SCHEDULE TABLE */
         .sched-table { width: 100%; border-collapse: collapse; margin-top: 5px; font-size: 12px; }
-        .sched-table td { padding: 5px; border-bottom: 1px solid #eee; vertical-align: top; }
+        .sched-table td { padding: 4px; border-bottom: 1px solid #eee; vertical-align: top; }
         .week-col { width: 60px; font-weight: bold; color: #7f8c8d; }
 
         /* MAP */
@@ -103,9 +98,9 @@
         <div id="sidebar-header">
             <h2><i class="fa-solid fa-map-location-dot"></i> Syllabus Explorer</h2>
             
-            <div id="status-panel">Initializing System...</div>
+            <div id="status-panel">System Starting...</div>
             
-            <input type="text" id="search-box" placeholder="Search title, code, topic...">
+            <input type="text" id="search-box" placeholder="Search title, software, textbook...">
             
             <div class="filter-grid">
                 <select id="uni-filter"><option value="all">All Universities</option></select>
@@ -116,54 +111,51 @@
                     <option value="has">Has Prerequisites</option>
                 </select>
             </div>
-            
-            <p style="margin-top:10px; font-size:12px; color:#666;">
-                Showing <b id="course-count">0</b> courses
-            </p>
+            <p style="margin-top:10px; font-size:12px; color:#666;">Showing <b id="course-count">0</b> courses</p>
         </div>
-        
         <div id="results-area"></div>
     </div>
 
     <div id="map"></div>
 
+    <script>
+        window.onerror = function(msg, url, line) {
+            const el = document.getElementById('status-panel');
+            if(el) {
+                el.className = 'error';
+                el.innerText = `CRITICAL ERROR:\n${msg}\nLine: ${line}\n\n(Check your Supabase Keys for line breaks!)`;
+            }
+            return false;
+        };
+    </script>
+
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 
     <script>
-        // --------------------------------------------------------
-        // 0. GLOBAL ERROR CATCHER (Detects Syntax Errors)
-        // --------------------------------------------------------
-        window.onerror = function(msg, url, line) {
-            const el = document.getElementById('status-panel');
-            el.className = 'error';
-            el.innerHTML = `<strong>CRITICAL ERROR:</strong><br>${msg}<br>Line: ${line}`;
-            return false;
-        };
-
-        // --------------------------------------------------------
-        // 1. CONFIGURATION
-        // --------------------------------------------------------
-        // ↓↓↓ PASTE KEYS HERE - ENSURE NO LINE BREAKS ↓↓↓
-        const SUPABASE_URL = 'https://ygzxhhmckfyeywdfrwcp.supabase.co'; 
-        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlnenhoaG1ja2Z5ZXl3ZGZyd2NwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0Nzc2MTAsImV4cCI6MjA4NDA1MzYxMH0.JrSW1-DyrduhK1_iAC-HgcwnxeDpzn98AVoriG0bTXw';
-        
-        // GITHUB PDF LOCATION
-        const GITHUB_PDF_BASE_URL = 'https://geojochen.github.io/UCGISsyllabusDB/pdfs/';
-
-        // --------------------------------------------------------
-        // 2. HELPER FUNCTIONS
-        // --------------------------------------------------------
         const statusEl = document.getElementById('status-panel');
-        function log(msg, isError = false) {
-            statusEl.innerHTML = msg;
-            if(isError) statusEl.className = 'error';
-            else statusEl.className = '';
+        function log(msg, type='info') {
+            statusEl.innerText = msg;
+            if(type==='error') statusEl.className = 'error';
+            if(type==='success') statusEl.className = 'success';
         }
 
         // --------------------------------------------------------
-        // 3. MAP SETUP
+        // CONFIGURATION - PASTE KEYS HERE
         // --------------------------------------------------------
+        // We use backticks (`) to allow multi-line pastes safely, 
+        // then we clean them up in code.
+        // --------------------------------------------------------
+        
+        const RAW_URL = `YOUR_SUPABASE_PROJECT_URL`; 
+        const RAW_KEY = `YOUR_SUPABASE_ANON_KEY`;
+        const GITHUB_PDF_BASE_URL = 'https://geojochen.github.io/UCGISsyllabusDB/pdfs/';
+
+        // --------------------------------------------------------
+        // LOGIC START
+        // --------------------------------------------------------
+        
+        // 1. Map Init
         const map = L.map('map').setView([39.8, -98.5], 4); 
         L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
             attribution: '© OpenStreetMap'
@@ -171,46 +163,48 @@
         let markers = L.layerGroup().addTo(map);
         setTimeout(() => map.invalidateSize(), 500);
 
-        // --------------------------------------------------------
-        // 4. MAIN APPLICATION
-        // --------------------------------------------------------
-        let supabase; 
+        // 2. Data Init
         let globalData = [];
-
+        
         async function init() {
-            log("Connecting to Database...");
-
-            // Check if Supabase library loaded
-            if (typeof window.supabase === 'undefined') {
-                log("Error: Supabase library failed to load.", true);
-                return;
-            }
-
-            try {
-                supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-            } catch (e) {
-                log("Configuration Error: Check your Keys!<br>" + e.message, true);
-                return;
-            }
-
-            // Fetch Data from VIEW
-            const { data, error } = await supabase.from('syllabus_map_view').select('*');
-
-            if (error) {
-                log("DB Error: " + error.message, true);
-                return;
-            }
-
-            if (!data || data.length === 0) {
-                log("Connected, but 0 courses found.", true);
-                return;
-            }
-
-            globalData = data;
-            log(`Success! Loaded ${data.length} courses.`);
+            log("Cleaning Keys...");
             
-            populateFilters(data);
-            applyFilters();
+            // CLEAN UP KEYS (Removes spaces/newlines if you pasted them by accident)
+        const SUPABASE_URL = 'https://ygzxhhmckfyeywdfrwcp.supabase.co'; 
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlnenhoaG1ja2Z5ZXl3ZGZyd2NwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0Nzc2MTAsImV4cCI6MjA4NDA1MzYxMH0.JrSW1-DyrduhK1_iAC-HgcwnxeDpzn98AVoriG0bTXw';
+
+            if(SUPABASE_URL.includes("YOUR_SUPABASE")) {
+                log("Error: You have not replaced the placeholder keys yet.", 'error');
+                return;
+            }
+
+            log("Connecting to Supabase...");
+            
+            try {
+                const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+                
+                // Fetch Data
+                const { data, error } = await supabase.from('syllabus_map_view').select('*');
+                
+                if (error) {
+                    log("DB Error: " + error.message, 'error');
+                    return;
+                }
+
+                if (!data || data.length === 0) {
+                    log("Connected, but found 0 courses.\nDid you run the SQL INSERT scripts?", 'error');
+                    return;
+                }
+
+                globalData = data;
+                log(`System Ready: ${data.length} courses loaded.`, 'success');
+                
+                populateFilters(data);
+                applyFilters();
+
+            } catch (err) {
+                log("Crash: " + err.message, 'error');
+            }
         }
 
         function populateFilters(data) {
@@ -239,7 +233,15 @@
             const fPre = document.getElementById('prereq-filter').value;
 
             const filtered = globalData.filter(item => {
-                const txt = (item.title + item.course_code + (JSON.stringify(item.schedule)||'')).toLowerCase();
+                // Expanded Search: Title, Code, Instructor, Textbooks, Topics
+                const txt = (
+                    item.title + 
+                    item.course_code + 
+                    (item.instructor_name || '') +
+                    (JSON.stringify(item.textbooks) || '') +
+                    (JSON.stringify(item.schedule) || '')
+                ).toLowerCase();
+                
                 const matchSearch = txt.includes(search);
                 const matchUni = fUni === 'all' || item.university_name === fUni;
                 const matchFmt = fFmt === 'all' || (item.delivery_format && item.delivery_format.includes(fFmt));
@@ -271,25 +273,30 @@
                     bounds.extend([item.lat, item.lon]);
                 }
 
-                // Sidebar Card
+                // Card
                 const div = document.createElement('div');
                 div.className = 'card';
                 
-                // PDF Button
                 const pdfHtml = item.pdf_filename 
                     ? `<a href="${GITHUB_PDF_BASE_URL}${item.pdf_filename}" target="_blank" class="pdf-btn"><i class="fa-regular fa-file-pdf"></i> View Syllabus PDF</a>` 
                     : '';
 
-                // Schedule Table
                 let schedHtml = '';
                 if(item.schedule && Array.isArray(item.schedule)) {
                     schedHtml = '<table class="sched-table">';
                     item.schedule.forEach(row => {
-                         // Flexible handling of "week" vs "date" keys
                          const time = row.week ? `Week ${row.week}` : (row.date || '');
                          schedHtml += `<tr><td class="week-col">${time}</td><td>${row.topic}</td></tr>`;
                     });
                     schedHtml += '</table>';
+                }
+
+                // Extract textbook title if JSON
+                let bookTxt = 'None';
+                if(item.textbooks) {
+                    if(typeof item.textbooks === 'string') bookTxt = item.textbooks;
+                    else if(item.textbooks.Title) bookTxt = item.textbooks.Title;
+                    else bookTxt = JSON.stringify(item.textbooks).slice(0,50)+'...';
                 }
 
                 div.innerHTML = `
@@ -305,6 +312,7 @@
                         <div class="detail-row"><span class="label">Instructor</span> ${item.instructor_name || 'TBD'}</div>
                         <div class="detail-row"><span class="label">Prerequisites</span> ${item.prerequisites || 'None'}</div>
                         <div class="detail-row"><span class="label">Software</span> ${item.required_software ? item.required_software.join(', ') : 'None'}</div>
+                        <div class="detail-row"><span class="label">Textbook</span> ${bookTxt}</div>
                         ${pdfHtml}
                         <div class="detail-row" style="margin-top:15px;">
                             <span class="label">Weekly Topics</span>
@@ -332,7 +340,6 @@
             document.getElementById(id).addEventListener(id === 'search-box' ? 'input' : 'change', applyFilters);
         });
 
-        // START
         init();
     </script>
 </body>
