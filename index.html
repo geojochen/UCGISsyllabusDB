@@ -9,9 +9,9 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <style>
-        /* RESET & LAYOUT */
+        /* BASE STYLES */
         * { box-sizing: border-box; }
-        html, body { height: 100%; width: 100%; margin: 0; padding: 0; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
+        html, body { height: 100%; width: 100%; margin: 0; padding: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body { display: flex; flex-direction: row; }
         
         /* SIDEBAR */
@@ -19,7 +19,7 @@
             width: 400px;
             min-width: 400px;
             height: 100vh;
-            background: #fff;
+            background: #ffffff;
             display: flex;
             flex-direction: column;
             border-right: 1px solid #ccc;
@@ -27,28 +27,35 @@
             box-shadow: 4px 0 15px rgba(0,0,0,0.1);
         }
 
-        #sidebar-header { padding: 20px; background: #f8f9fa; border-bottom: 1px solid #e9ecef; }
-        h2 { margin: 0 0 10px 0; font-size: 20px; color: #2c3e50; }
-        
-        /* DIAGNOSTIC BOX (Visible only on error) */
-        #error-display {
-            display: none;
-            background: #ffebee;
-            color: #c62828;
-            border: 1px solid #ef5350;
-            padding: 10px;
-            font-size: 12px;
-            margin-bottom: 10px;
-            border-radius: 4px;
+        /* HEADER */
+        #sidebar-header {
+            padding: 20px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
         }
+        h2 { margin: 0 0 10px 0; font-size: 20px; color: #2c3e50; }
+
+        /* DIAGNOSTIC PANEL */
+        #status-panel {
+            font-size: 12px;
+            padding: 10px;
+            background: #e3f2fd;
+            color: #0d47a1;
+            border: 1px solid #90caf9;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            font-family: monospace;
+        }
+        #status-panel.error { background: #ffebee; color: #c62828; border-color: #ef5350; }
 
         /* FILTERS */
         .filter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
         select, input { width: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 4px; font-size: 13px; }
 
-        /* RESULTS */
+        /* RESULTS LIST */
         #results-area { flex-grow: 1; overflow-y: auto; padding: 15px; background: #fdfdfd; }
 
+        /* CARDS */
         .card {
             background: white;
             border: 1px solid #e1e4e8;
@@ -57,33 +64,34 @@
             transition: all 0.2s;
             overflow: hidden;
         }
-        .card:hover { border-color: #3498db; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .card:hover { border-color: #3498db; box-shadow: 0 4px 8px rgba(0,0,0,0.05); }
         
-        .card-header { padding: 12px; cursor: pointer; display: flex; justify-content: space-between; align-items: flex-start; }
-        .card h3 { margin: 0; font-size: 15px; color: #2c3e50; font-weight: 700; }
-        .card p { margin: 3px 0 0; font-size: 13px; color: #555; }
-        .uni-tag { display: inline-block; font-size: 11px; color: #3498db; font-weight: bold; margin-top: 5px; }
+        .card-header { padding: 15px; cursor: pointer; display: flex; justify-content: space-between; align-items: flex-start; }
+        .card h3 { margin: 0; font-size: 16px; color: #2c3e50; font-weight: 600; }
+        .card p { margin: 4px 0 0; font-size: 13px; color: #666; }
+        .uni-tag { display: inline-block; font-size: 11px; font-weight: bold; color: #3498db; margin-top: 5px; text-transform: uppercase; }
 
-        /* DETAILS (Hidden by default) */
-        .card-details { display: none; padding: 0 12px 12px 12px; background: #fafbfc; border-top: 1px solid #eee; font-size: 13px; color: #444; }
+        /* EXPANDED DETAILS */
+        .card-details { display: none; padding: 0 15px 15px 15px; background: #fafbfc; border-top: 1px solid #eee; font-size: 13px; color: #444; }
         .card.active .card-details { display: block; }
         .card.active { border-color: #3498db; }
         
-        .detail-row { margin-top: 8px; }
-        .label { font-weight: bold; color: #333; display: block; font-size: 11px; text-transform: uppercase; }
+        .detail-row { margin-top: 10px; }
+        .label { font-weight: bold; color: #555; display: block; font-size: 11px; margin-bottom: 2px; }
 
         /* PDF BUTTON */
         .pdf-btn {
-            display: inline-flex; align-items: center; gap: 5px;
+            display: inline-flex; align-items: center; gap: 6px;
             background: #e74c3c; color: white; padding: 6px 12px; border-radius: 4px;
-            text-decoration: none; font-size: 12px; font-weight: bold; margin-top: 10px;
+            text-decoration: none; font-size: 12px; font-weight: bold; margin-top: 15px;
+            transition: background 0.2s;
         }
         .pdf-btn:hover { background: #c0392b; }
 
         /* SCHEDULE TABLE */
         .sched-table { width: 100%; border-collapse: collapse; margin-top: 5px; font-size: 12px; }
-        .sched-table td { padding: 4px; border-bottom: 1px solid #eee; }
-        .week { font-weight: bold; color: #777; width: 50px; }
+        .sched-table td { padding: 5px; border-bottom: 1px solid #eee; vertical-align: top; }
+        .week-col { width: 60px; font-weight: bold; color: #7f8c8d; }
 
         /* MAP */
         #map { flex-grow: 1; height: 100vh; background-color: #e5e5e5; }
@@ -95,9 +103,7 @@
         <div id="sidebar-header">
             <h2><i class="fa-solid fa-map-location-dot"></i> Syllabus Explorer</h2>
             
-            <div id="error-display"></div>
-
-            <div id="status-line" style="font-size:12px; color:#666; margin-bottom:5px;">Initializing...</div>
+            <div id="status-panel">Initializing System...</div>
             
             <input type="text" id="search-box" placeholder="Search title, code, topic...">
             
@@ -110,6 +116,10 @@
                     <option value="has">Has Prerequisites</option>
                 </select>
             </div>
+            
+            <p style="margin-top:10px; font-size:12px; color:#666;">
+                Showing <b id="course-count">0</b> courses
+            </p>
         </div>
         
         <div id="results-area"></div>
@@ -122,29 +132,37 @@
 
     <script>
         // --------------------------------------------------------
+        // 0. GLOBAL ERROR CATCHER (Detects Syntax Errors)
+        // --------------------------------------------------------
+        window.onerror = function(msg, url, line) {
+            const el = document.getElementById('status-panel');
+            el.className = 'error';
+            el.innerHTML = `<strong>CRITICAL ERROR:</strong><br>${msg}<br>Line: ${line}`;
+            return false;
+        };
+
+        // --------------------------------------------------------
         // 1. CONFIGURATION
         // --------------------------------------------------------
+        // ↓↓↓ PASTE KEYS HERE - ENSURE NO LINE BREAKS ↓↓↓
         const SUPABASE_URL = 'https://ygzxhhmckfyeywdfrwcp.supabase.co'; 
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlnenhoaG1ja2Z5ZXl3ZGZyd2NwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0Nzc2MTAsImV4cCI6MjA4NDA1MzYxMH0.JrSW1-DyrduhK1_iAC-HgcwnxeDpzn98AVoriG0bTXw';
         
-        // ⚠️ YOUR GITHUB USERNAME GOES HERE:
+        // GITHUB PDF LOCATION
         const GITHUB_PDF_BASE_URL = 'https://geojochen.github.io/UCGISsyllabusDB/pdfs/';
 
         // --------------------------------------------------------
-        // 2. ERROR HANDLER
+        // 2. HELPER FUNCTIONS
         // --------------------------------------------------------
-        function showError(msg) {
-            const el = document.getElementById('error-display');
-            el.style.display = 'block';
-            el.innerHTML = `<strong>Error:</strong> ${msg}`;
-            document.getElementById('status-line').innerText = "Failed.";
-        }
-        function updateStatus(msg) {
-            document.getElementById('status-line').innerText = msg;
+        const statusEl = document.getElementById('status-panel');
+        function log(msg, isError = false) {
+            statusEl.innerHTML = msg;
+            if(isError) statusEl.className = 'error';
+            else statusEl.className = '';
         }
 
         // --------------------------------------------------------
-        // 3. MAP INIT
+        // 3. MAP SETUP
         // --------------------------------------------------------
         const map = L.map('map').setView([39.8, -98.5], 4); 
         L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
@@ -154,30 +172,42 @@
         setTimeout(() => map.invalidateSize(), 500);
 
         // --------------------------------------------------------
-        // 4. MAIN LOGIC
+        // 4. MAIN APPLICATION
         // --------------------------------------------------------
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        let supabase; 
         let globalData = [];
 
         async function init() {
-            updateStatus("Connecting to Supabase...");
-            
-            // Try to fetch data
+            log("Connecting to Database...");
+
+            // Check if Supabase library loaded
+            if (typeof window.supabase === 'undefined') {
+                log("Error: Supabase library failed to load.", true);
+                return;
+            }
+
+            try {
+                supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+            } catch (e) {
+                log("Configuration Error: Check your Keys!<br>" + e.message, true);
+                return;
+            }
+
+            // Fetch Data from VIEW
             const { data, error } = await supabase.from('syllabus_map_view').select('*');
-            
+
             if (error) {
-                console.error(error);
-                showError("Database Connection Failed. <br>Details: " + error.message);
+                log("DB Error: " + error.message, true);
                 return;
             }
 
             if (!data || data.length === 0) {
-                showError("Connected, but 0 courses found. Did you run the SQL INSERT script?");
+                log("Connected, but 0 courses found.", true);
                 return;
             }
 
             globalData = data;
-            updateStatus(`Loaded ${data.length} courses.`);
+            log(`Success! Loaded ${data.length} courses.`);
             
             populateFilters(data);
             applyFilters();
@@ -186,12 +216,10 @@
         function populateFilters(data) {
             const addOpts = (id, items) => {
                 const sel = document.getElementById(id);
-                [...new Set(items)].sort().forEach(i => {
-                    if(i) {
-                        const opt = document.createElement('option');
-                        opt.value = i; opt.innerText = i;
-                        sel.appendChild(opt);
-                    }
+                [...new Set(items)].filter(Boolean).sort().forEach(i => {
+                    const opt = document.createElement('option');
+                    opt.value = i; opt.innerText = i;
+                    sel.appendChild(opt);
                 });
             };
 
@@ -211,7 +239,7 @@
             const fPre = document.getElementById('prereq-filter').value;
 
             const filtered = globalData.filter(item => {
-                const txt = (item.title + item.course_code).toLowerCase();
+                const txt = (item.title + item.course_code + (JSON.stringify(item.schedule)||'')).toLowerCase();
                 const matchSearch = txt.includes(search);
                 const matchUni = fUni === 'all' || item.university_name === fUni;
                 const matchFmt = fFmt === 'all' || (item.delivery_format && item.delivery_format.includes(fFmt));
@@ -228,13 +256,14 @@
         }
 
         function render(data) {
+            document.getElementById('course-count').innerText = data.length;
             markers.clearLayers();
             const container = document.getElementById('results-area');
             container.innerHTML = '';
             let bounds = L.latLngBounds();
 
             data.forEach(item => {
-                // 1. Marker
+                // Map Marker
                 if (item.lat && item.lon) {
                     const m = L.marker([item.lat, item.lon])
                         .bindPopup(`<b>${item.course_code}</b><br>${item.university_name}`);
@@ -242,19 +271,23 @@
                     bounds.extend([item.lat, item.lon]);
                 }
 
-                // 2. Card
+                // Sidebar Card
                 const div = document.createElement('div');
                 div.className = 'card';
                 
+                // PDF Button
                 const pdfHtml = item.pdf_filename 
                     ? `<a href="${GITHUB_PDF_BASE_URL}${item.pdf_filename}" target="_blank" class="pdf-btn"><i class="fa-regular fa-file-pdf"></i> View Syllabus PDF</a>` 
                     : '';
 
+                // Schedule Table
                 let schedHtml = '';
                 if(item.schedule && Array.isArray(item.schedule)) {
                     schedHtml = '<table class="sched-table">';
                     item.schedule.forEach(row => {
-                         schedHtml += `<tr><td class="week">${row.week || row.date}</td><td>${row.topic}</td></tr>`;
+                         // Flexible handling of "week" vs "date" keys
+                         const time = row.week ? `Week ${row.week}` : (row.date || '');
+                         schedHtml += `<tr><td class="week-col">${time}</td><td>${row.topic}</td></tr>`;
                     });
                     schedHtml += '</table>';
                 }
@@ -275,7 +308,7 @@
                         ${pdfHtml}
                         <div class="detail-row" style="margin-top:15px;">
                             <span class="label">Weekly Topics</span>
-                            ${schedHtml || '<em style="color:#999">No schedule extracted.</em>'}
+                            ${schedHtml || '<em style="color:#999">No detailed schedule available.</em>'}
                         </div>
                     </div>
                 `;
@@ -288,10 +321,7 @@
         window.toggleCard = function(header, lat, lon) {
             const card = header.parentElement;
             const isActive = card.classList.contains('active');
-            
-            // Collapse all others
             document.querySelectorAll('.card').forEach(c => c.classList.remove('active'));
-
             if(!isActive) {
                 card.classList.add('active');
                 if(lat && lon) map.flyTo([lat, lon], 14);
@@ -302,6 +332,7 @@
             document.getElementById(id).addEventListener(id === 'search-box' ? 'input' : 'change', applyFilters);
         });
 
+        // START
         init();
     </script>
 </body>
