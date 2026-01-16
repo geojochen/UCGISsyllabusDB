@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Geospatial Syllabus Explorer</title>
+    <title>Geospatial Syllabus Explorer (Debug)</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <style>
-        /* BASE LAYOUT */
+        /* 1. NUCLEAR CSS RESET */
         * { box-sizing: border-box; }
         html, body { height: 100%; width: 100%; margin: 0; padding: 0; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
         body { display: flex; flex-direction: row; }
@@ -27,109 +27,58 @@
             box-shadow: 4px 0 15px rgba(0,0,0,0.1);
         }
 
-        /* HEADER & FILTERS */
-        #sidebar-header {
-            padding: 20px;
-            background: #f8f9fa;
-            border-bottom: 1px solid #e9ecef;
-        }
-        h2 { margin: 0 0 15px 0; color: #2c3e50; font-size: 20px; display: flex; align-items: center; gap: 10px; }
+        #sidebar-header { padding: 20px; background: #f8f9fa; border-bottom: 1px solid #e9ecef; }
+        h2 { margin: 0 0 10px 0; font-size: 20px; }
         
-        .filter-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-        }
-        
-        select, input {
-            width: 100%;
-            padding: 8px;
-            border: 1px solid #ced4da;
-            border-radius: 4px;
-            font-size: 13px;
-        }
-
-        /* RESULTS LIST */
-        #results-area {
-            flex-grow: 1;
+        /* DEBUG BOX */
+        .debug-console {
+            background: #333;
+            color: #0f0;
+            font-family: monospace;
+            font-size: 11px;
+            padding: 10px;
+            height: 100px;
             overflow-y: auto;
-            padding: 15px;
-            background: #fdfdfd;
+            margin-bottom: 15px;
+            border: 1px solid #000;
         }
 
-        /* COURSE CARD STYLING */
+        /* FILTERS */
+        .filter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+        select, input { width: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 4px; }
+
+        /* RESULTS */
+        #results-area { flex-grow: 1; overflow-y: auto; padding: 15px; background: #fdfdfd; }
+
         .card {
             background: white;
             border: 1px solid #e1e4e8;
             border-radius: 8px;
             margin-bottom: 12px;
-            transition: all 0.2s;
-            overflow: hidden;
-        }
-        .card:hover { border-color: #3498db; box-shadow: 0 4px 8px rgba(0,0,0,0.05); }
-        
-        .card-header {
-            padding: 15px;
+            padding: 10px;
             cursor: pointer;
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
         }
-        .card-title h3 { margin: 0; font-size: 16px; color: #2c3e50; }
-        .card-title p { margin: 4px 0 0; font-size: 13px; color: #666; }
-        .uni-tag { 
-            font-size: 11px; font-weight: bold; color: #3498db; text-transform: uppercase; margin-top: 5px; display: block;
-        }
-
-        /* EXPANDED DETAILS */
-        .card-details {
-            display: none; /* Hidden by default */
-            padding: 0 15px 15px 15px;
-            border-top: 1px solid #f0f0f0;
-            background: #fafbfc;
-            font-size: 13px;
-            color: #444;
-        }
-        .card.active .card-details { display: block; }
-        .card.active { border-color: #3498db; }
-
-        .detail-section { margin-top: 10px; }
-        .detail-label { font-weight: bold; color: #555; display: block; margin-bottom: 3px; }
+        .card:hover { border-color: #3498db; }
         
-        /* WEEKLY SCHEDULE TABLE */
-        .topic-table { width: 100%; border-collapse: collapse; margin-top: 5px; font-size: 12px; }
-        .topic-table td { padding: 4px; border-bottom: 1px solid #eee; }
-        .topic-table tr:last-child td { border-bottom: none; }
-        .week-col { width: 40px; font-weight: bold; color: #888; }
-
-        /* PDF BUTTON */
-        .pdf-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            background: #e74c3c;
-            color: white;
-            padding: 6px 12px;
-            border-radius: 4px;
-            text-decoration: none;
-            font-size: 12px;
-            font-weight: bold;
-            margin-top: 10px;
-            transition: background 0.2s;
-        }
-        .pdf-btn:hover { background: #c0392b; }
-
         /* MAP */
         #map { flex-grow: 1; height: 100vh; background-color: #e5e5e5; }
+        
+        /* PDF BTN */
+        .pdf-btn {
+            display: inline-block; background: #e74c3c; color: white; 
+            padding: 4px 8px; border-radius: 4px; text-decoration: none; font-size: 11px; margin-top:5px;
+        }
     </style>
 </head>
 <body>
 
     <div id="sidebar">
         <div id="sidebar-header">
-            <h2><i class="fa-solid fa-map-location-dot"></i> Syllabus Explorer</h2>
+            <h2>Syllabus Explorer</h2>
             
-            <input type="text" id="search-box" placeholder="Search title, code, or topic..." style="margin-bottom: 10px;">
+            <div id="console" class="debug-console">Initializing...</div>
+            
+            <input type="text" id="search-box" placeholder="Search...">
             
             <div class="filter-grid">
                 <select id="uni-filter"><option value="all">All Universities</option></select>
@@ -141,9 +90,7 @@
                 </select>
             </div>
             
-            <div style="margin-top: 10px; font-size: 12px; color: #666;">
-                Showing <b id="course-count">0</b> courses
-            </div>
+            <p>Showing <b id="course-count">0</b> courses</p>
         </div>
         
         <div id="results-area"></div>
@@ -160,12 +107,22 @@
         // --------------------------------------------------------
         const SUPABASE_URL = 'https://ygzxhhmckfyeywdfrwcp.supabase.co'; 
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlnenhoaG1ja2Z5ZXl3ZGZyd2NwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0Nzc2MTAsImV4cCI6MjA4NDA1MzYxMH0.JrSW1-DyrduhK1_iAC-HgcwnxeDpzn98AVoriG0bTXw';
-        
-        // ⚠️ CHANGE THIS TO YOUR GITHUB USERNAME
         const GITHUB_PDF_BASE_URL = 'https://geojochen.github.io/UCGISsyllabusDB/pdfs/';
 
         // --------------------------------------------------------
-        // 2. INITIALIZE MAP
+        // 2. DEBUG HELPER
+        // --------------------------------------------------------
+        const consoleDiv = document.getElementById('console');
+        function log(msg, type='info') {
+            const d = document.createElement('div');
+            d.innerHTML = `> ${msg}`;
+            if(type === 'error') d.style.color = '#ff5555';
+            consoleDiv.appendChild(d);
+            consoleDiv.scrollTop = consoleDiv.scrollHeight;
+        }
+
+        // --------------------------------------------------------
+        // 3. MAP INIT
         // --------------------------------------------------------
         const map = L.map('map').setView([39.8, -98.5], 4); 
         L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
@@ -173,24 +130,40 @@
         }).addTo(map);
         let markers = L.layerGroup().addTo(map);
 
+        setTimeout(() => { map.invalidateSize(); }, 500);
+
         // --------------------------------------------------------
-        // 3. MAIN LOGIC
+        // 4. LOGIC
         // --------------------------------------------------------
         const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         let globalData = [];
 
         async function init() {
-            // Fetch everything (including new columns: pdf_filename, prerequisites, schedule)
+            log("Fetching data from 'syllabus_map_view'...");
+
+            // Query the VIEW we just repaired
             const { data, error } = await supabase.from('syllabus_map_view').select('*');
-            if (error) { console.error(error); return; }
             
+            if (error) { 
+                log("DB ERROR: " + error.message, 'error');
+                log("Hint: Did you run the SQL Repair script?", 'error');
+                return; 
+            }
+            
+            if (!data || data.length === 0) {
+                log("Success, but 0 rows returned.", 'error');
+                log("Hint: Is the database empty?", 'error');
+                return;
+            }
+
+            log(`Success! Loaded ${data.length} courses.`);
             globalData = data;
+            
             populateFilters(data);
             applyFilters();
         }
 
         function populateFilters(data) {
-            // Helper to add options to select
             const addOpts = (id, items) => {
                 const sel = document.getElementById(id);
                 [...new Set(items)].sort().forEach(i => {
@@ -205,12 +178,13 @@
             addOpts('uni-filter', data.map(d => d.university_name));
             addOpts('format-filter', data.map(d => d.delivery_format));
             
-            // Extract unique software from arrays
             let allSoftware = [];
             data.forEach(d => {
                 if(d.required_software) allSoftware.push(...d.required_software);
             });
             addOpts('software-filter', allSoftware);
+            
+            log("Filters populated.");
         }
 
         function applyFilters() {
@@ -221,18 +195,11 @@
             const fPre = document.getElementById('prereq-filter').value;
 
             const filtered = globalData.filter(item => {
-                // Search Text
                 const txt = (item.title + item.course_code).toLowerCase();
                 const matchSearch = txt.includes(search);
-                
-                // Dropdowns
                 const matchUni = fUni === 'all' || item.university_name === fUni;
                 const matchFmt = fFmt === 'all' || (item.delivery_format && item.delivery_format.includes(fFmt));
-                
-                // Software Array Check
                 const matchSoft = fSoft === 'all' || (item.required_software && item.required_software.includes(fSoft));
-                
-                // Prereq Logic
                 let matchPre = true;
                 if (fPre === 'none') matchPre = !item.prerequisites;
                 if (fPre === 'has') matchPre = !!item.prerequisites;
@@ -251,7 +218,6 @@
             let bounds = L.latLngBounds();
 
             data.forEach(item => {
-                // 1. Map Marker
                 if (item.lat && item.lon) {
                     const m = L.marker([item.lat, item.lon])
                         .bindPopup(`<b>${item.course_code}</b><br>${item.university_name}`);
@@ -259,78 +225,41 @@
                     bounds.extend([item.lat, item.lon]);
                 }
 
-                // 2. Sidebar Card
                 const div = document.createElement('div');
                 div.className = 'card';
                 
-                // Check if PDF exists
-                const pdfHtml = item.pdf_filename 
-                    ? `<a href="${GITHUB_PDF_BASE_URL}${item.pdf_filename}" target="_blank" class="pdf-btn"><i class="fa-regular fa-file-pdf"></i> View Syllabus PDF</a>` 
+                // PDF Logic
+                const pdfLink = item.pdf_filename 
+                    ? `<a href="${GITHUB_PDF_BASE_URL}${item.pdf_filename}" target="_blank" class="pdf-btn">PDF</a>` 
                     : '';
 
-                // Generate Schedule HTML
-                let scheduleHtml = '';
-                if (item.schedule && Array.isArray(item.schedule)) {
-                    scheduleHtml = '<table class="topic-table">';
-                    item.schedule.forEach(wk => {
-                        scheduleHtml += `<tr><td class="week-col">${wk.week || wk.date}</td><td>${wk.topic}</td></tr>`;
-                    });
-                    scheduleHtml += '</table>';
-                } else {
-                    scheduleHtml = '<span style="color:#999; font-style:italic;">No detailed schedule extracted.</span>';
+                // Schedule Logic
+                let details = '';
+                if(item.schedule) {
+                    details += `<div style="margin-top:5px; font-size:11px; border-top:1px solid #eee; padding-top:5px;">
+                        <b>Schedule:</b> ${JSON.stringify(item.schedule).slice(0, 50)}...
+                    </div>`;
                 }
 
                 div.innerHTML = `
-                    <div class="card-header" onclick="toggleCard(this, ${item.lat}, ${item.lon})">
-                        <div class="card-title">
-                            <h3>${item.course_code}</h3>
-                            <p>${item.title}</p>
-                            <span class="uni-tag">${item.university_name}</span>
-                        </div>
-                        <i class="fa-solid fa-chevron-down" style="color:#ccc;"></i>
-                    </div>
-                    <div class="card-details">
-                        <div class="detail-section">
-                            <span class="detail-label">Instructor</span> ${item.instructor_name || 'TBD'}
-                        </div>
-                        <div class="detail-section">
-                            <span class="detail-label">Prerequisites</span> ${item.prerequisites || 'None listed'}
-                        </div>
-                        <div class="detail-section">
-                            <span class="detail-label">Software</span> ${item.required_software ? item.required_software.join(', ') : 'None listed'}
-                        </div>
-                        
-                        ${pdfHtml}
-                        
-                        <div class="detail-section" style="margin-top:15px;">
-                            <span class="detail-label">Weekly Schedule / Topics</span>
-                            ${scheduleHtml}
-                        </div>
-                    </div>
+                    <h3>${item.course_code}</h3>
+                    <p>${item.title}</p>
+                    <p style="font-size:11px; color:#666;">${item.university_name}</p>
+                    ${pdfLink}
+                    ${details}
                 `;
+                
+                div.onclick = (e) => {
+                    // Don't zoom if clicking the PDF button
+                    if(e.target.tagName === 'A') return;
+                    if (item.lat && item.lon) map.flyTo([item.lat, item.lon], 14);
+                };
                 container.appendChild(div);
             });
 
             if(data.length > 0 && bounds.isValid()) map.fitBounds(bounds, {padding:[50,50], maxZoom:12});
         }
 
-        // Card Toggle Function (Global scope needed for onclick)
-        window.toggleCard = function(header, lat, lon) {
-            const card = header.parentElement;
-            const wasActive = card.classList.contains('active');
-            
-            // Close all others
-            document.querySelectorAll('.card').forEach(c => c.classList.remove('active'));
-            
-            if(!wasActive) {
-                card.classList.add('active');
-                if(lat && lon) {
-                    map.flyTo([lat, lon], 13);
-                }
-            }
-        };
-
-        // Event Listeners
         ['search-box', 'uni-filter', 'format-filter', 'software-filter', 'prereq-filter'].forEach(id => {
             document.getElementById(id).addEventListener(id === 'search-box' ? 'input' : 'change', applyFilters);
         });
