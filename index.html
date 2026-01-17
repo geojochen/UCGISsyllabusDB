@@ -116,7 +116,13 @@
                 </select>
 
                 <select id="uni-filter"><option value="all">All Universities</option></select>
+                <select id="format-filter"><option value="all">Any Format</option></select>
+                
                 <select id="software-filter"><option value="all">Any Software</option></select>
+                <select id="prereq-filter"><option value="all">All Levels</option>
+                    <option value="none">No Prerequisites</option>
+                    <option value="has">Has Prerequisites</option>
+                </select>
             </div>
             <p style="margin-top:10px; font-size:12px; color:#666;">Showing <b id="course-count">0</b> courses</p>
         </div>
@@ -170,8 +176,10 @@
         let globalData = [];
         
         async function init() {
+            log("Checking Configuration...");
+            
             if(SUPABASE_URL.includes("YOUR_SUPABASE")) {
-                log("Error: You have not replaced the placeholder keys yet.", 'error');
+                log("⚠️ CONFIG ERROR: You must edit the HTML file and paste your Supabase URL and Key (Lines 125-126).", 'error');
                 return;
             }
 
@@ -180,11 +188,18 @@
             try {
                 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
                 
-                // Fetch Data (Including the new 'keywords' and 'schedule' columns from the View)
+                // Fetch Data
                 const { data, error } = await supabase.from('syllabus_map_view').select('*');
                 
-                if (error) throw error;
-                if (!data || data.length === 0) throw new Error("No data found in DB.");
+                if (error) {
+                    // Check specifically for the missing column error
+                    if(error.message.includes("keywords")) {
+                         throw new Error("Database View Outdated: Run the 'CREATE VIEW' SQL script again.");
+                    }
+                    throw error;
+                }
+                
+                if (!data || data.length === 0) throw new Error("Connected, but DB is empty. Run the Python upload scripts.");
 
                 globalData = data;
                 log(`System Ready: ${data.length} courses loaded.`, 'success');
@@ -193,7 +208,7 @@
                 applyFilters();
 
             } catch (err) {
-                log("Crash: " + err.message, 'error');
+                log("Error: " + err.message, 'error');
             }
         }
 
@@ -210,30 +225,34 @@
             // 1. Universities
             addOpts('uni-filter', data.map(d => d.university_name));
             
-            // 2. Software
+            // 2. Format
+            addOpts('format-filter', data.map(d => d.delivery_format));
+
+            // 3. Software
             let software = [];
             data.forEach(d => { if(d.required_software) software.push(...d.required_software); });
             addOpts('software-filter', software);
 
-            // 3. KEYWORDS (The New Dropdown)
+            // 4. KEYWORDS (Dropdown)
             let allKeywords = [];
             data.forEach(d => {
                 if(d.keywords && Array.isArray(d.keywords)) {
                     allKeywords.push(...d.keywords);
                 }
             });
-            // Add to the Topic dropdown
             addOpts('keyword-filter', allKeywords);
         }
 
         function applyFilters() {
             const search = document.getElementById('search-box').value.toLowerCase();
             const fUni = document.getElementById('uni-filter').value;
+            const fFmt = document.getElementById('format-filter').value;
             const fSoft = document.getElementById('software-filter').value;
-            const fKw = document.getElementById('keyword-filter').value; // New Filter
+            const fPre = document.getElementById('prereq-filter').value;
+            const fKw = document.getElementById('keyword-filter').value;
 
             const filtered = globalData.filter(item => {
-                // Expanded Search: Now checks KEYWORDS array too!
+                // Expanded Search
                 const kwString = (item.keywords || []).join(' ');
                 
                 const txt = (
@@ -245,12 +264,15 @@
                 
                 const matchSearch = txt.includes(search);
                 const matchUni = fUni === 'all' || item.university_name === fUni;
+                const matchFmt = fFmt === 'all' || (item.delivery_format && item.delivery_format.includes(fFmt));
                 const matchSoft = fSoft === 'all' || (item.required_software && item.required_software.includes(fSoft));
-                
-                // Dropdown Logic
                 const matchKw = fKw === 'all' || (item.keywords && item.keywords.includes(fKw));
+                
+                let matchPre = true;
+                if (fPre === 'none') matchPre = !item.prerequisites;
+                if (fPre === 'has') matchPre = !!item.prerequisites;
 
-                return matchSearch && matchUni && matchSoft && matchKw;
+                return matchSearch && matchUni && matchFmt && matchSoft && matchPre && matchKw;
             });
 
             render(filtered);
@@ -286,4 +308,69 @@
                     schedHtml = '<table class="sched-table">';
                     item.schedule.forEach(row => {
                          const time = row.week ? `Week ${row.week}` : (row.date || '');
-                         schedHtml += `<tr><td class="week-col">${time}</td>
+                         schedHtml += `<tr><td class="week-col">${time}</td><td>${row.topic}</td></tr>`;
+                    });
+                    schedHtml += '</table>';
+                } else {
+                    schedHtml = '<em style="color:#999">No detailed schedule available.</em>';
+                }
+
+                // Keywords Badges
+                let kwHtml = '';
+                if(item.keywords && item.keywords.length > 0) {
+                    kwHtml = '<div class="tag-container">';
+                    item.keywords.forEach(tag => {
+                        kwHtml += `<span class="kw-badge">${tag}</span>`;
+                    });
+                    kwHtml += '</div>';
+                }
+
+                div.innerHTML = `
+                    <div class="card-header" onclick="toggleCard(this, ${item.lat}, ${item.lon})">
+                        <div>
+                            <h3>${item.course_code}</h3>
+                            <p>${item.title}</p>
+                            <span class="uni-tag">${item.university_name}</span>
+                        </div>
+                        <i class="fa-solid fa-chevron-down" style="color:#aaa"></i>
+                    </div>
+                    <div class="card-details">
+                        ${kwHtml}
+                        
+                        <div class="detail-row"><span class="label">Instructor</span> ${item.instructor_name || 'TBD'}</div>
+                        <div class="detail-row"><span class="label">Format</span> ${item.delivery_format || 'Unknown'}</div>
+                        <div class="detail-row"><span class="label">Prerequisites</span> ${item.prerequisites || 'None'}</div>
+                        <div class="detail-row"><span class="label">Software</span> ${item.required_software ? item.required_software.join(', ') : 'None'}</div>
+                        
+                        ${pdfHtml}
+                        
+                        <div class="detail-row" style="margin-top:15px;">
+                            <span class="label">Weekly Topics</span>
+                            ${schedHtml}
+                        </div>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+
+            if(data.length > 0 && bounds.isValid()) map.fitBounds(bounds, {padding:[50,50], maxZoom:12});
+        }
+
+        window.toggleCard = function(header, lat, lon) {
+            const card = header.parentElement;
+            const isActive = card.classList.contains('active');
+            document.querySelectorAll('.card').forEach(c => c.classList.remove('active'));
+            if(!isActive) {
+                card.classList.add('active');
+                if(lat && lon) map.flyTo([lat, lon], 14);
+            }
+        };
+
+        ['search-box', 'uni-filter', 'format-filter', 'software-filter', 'prereq-filter', 'keyword-filter'].forEach(id => {
+            document.getElementById(id).addEventListener(id === 'search-box' ? 'input' : 'change', applyFilters);
+        });
+
+        init();
+    </script>
+</body>
+</html>
