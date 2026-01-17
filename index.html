@@ -117,7 +117,7 @@
 
                 <select id="uni-filter"><option value="all">All Universities</option></select>
                 <select id="format-filter"><option value="all">Any Format</option></select>
-                <select id="software-filter"><option value="all">Any Software</option></select>
+                <select id="software-filter"><option value="all">Filter by Software</option></select>
                 <select id="prereq-filter"><option value="all">All Levels</option>
                     <option value="none">No Prerequisites</option>
                     <option value="has">Has Prerequisites</option>
@@ -143,9 +143,9 @@
         }
 
         // --------------------------------------------------------
-        // KEYS (PRE-FILLED FOR JOCHEN ALBRECHT)
+        // KEYS
         // --------------------------------------------------------
-        const SUPABASE_URL = 'https://ygzxhhmckfyeywdfrwcp.supabase.co'; 
+        const SUPABASE_URL = 'https://ygzxhhmckfyeywdfrwcp.supabase.co';
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlnenhoaG1ja2Z5ZXl3ZGZyd2NwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0Nzc2MTAsImV4cCI6MjA4NDA1MzYxMH0.JrSW1-DyrduhK1_iAC-HgcwnxeDpzn98AVoriG0bTXw';
         const GITHUB_PDF_BASE_URL = 'https://geojochen.github.io/UCGISsyllabusDB/pdfs/';
 
@@ -166,34 +166,22 @@
             log("Connecting to Supabase...");
             
             try {
-                if (!window.supabase) throw new Error("Supabase library failed to load. Check your network connection.");
+                if (!window.supabase) throw new Error("Supabase library failed to load.");
                 
                 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
                 
-                // Fetch Data
                 const { data, error } = await supabase.from('syllabus_map_view').select('*');
                 
-                if (error) {
-                    if(error.message.includes("keywords")) {
-                         throw new Error("VIEW ERROR: Run the SQL Script to DROP and CREATE the view.");
-                    }
-                    throw error;
-                }
-                
+                if (error) throw error;
                 if (!data || data.length === 0) throw new Error("Connected, but DB is empty.");
 
-                globalData = data;
+                // --- FIX 2: SORT ALPHABETICALLY ON LOAD ---
+                globalData = data.sort((a, b) => a.university_name.localeCompare(b.university_name));
+                
                 log(`System Ready: ${data.length} courses loaded.`, 'success');
                 
-                // Safe Populate
-                try {
-                    populateFilters(data);
-                } catch(e) {
-                    console.error("Filter Error:", e);
-                    log("Warning: Filters failed to load, but map is ready.", 'error');
-                }
-                
-                applyFilters();
+                populateFilters(globalData);
+                render(globalData); // Render sorted data
 
             } catch (err) {
                 log("Error: " + err.message, 'error');
@@ -224,11 +212,27 @@
             addOpts('uni-filter', data.map(d => d.university_name));
             addOpts('format-filter', data.map(d => d.delivery_format));
 
-            let software = [];
-            data.forEach(d => { if(d.required_software) software.push(...d.required_software); });
-            addOpts('software-filter', software);
+            // --- FIX 1: SMART SOFTWARE FILTER ---
+            // If the specific 'software' column is empty, check Keywords for known tools.
+            const knownSoftware = ["ArcGIS", "QGIS", "Python", "R", "SQL", "PostGIS", "ENVI", "ERDAS", "Leaflet", "JavaScript", "GeoDa", "Tableau", "SPSS", "SAS", "Idrisi", "Manifold", "Mapbox"];
+            let softwareList = [];
 
-            // KEYWORDS (Safe Extraction)
+            data.forEach(d => { 
+                // 1. Check explicit software column
+                if(d.required_software && Array.isArray(d.required_software)) {
+                    softwareList.push(...d.required_software);
+                }
+                // 2. Check keywords for software names
+                if(d.keywords && Array.isArray(d.keywords)) {
+                    d.keywords.forEach(k => {
+                        const match = knownSoftware.find(sw => sw.toLowerCase() === k.toLowerCase());
+                        if(match) softwareList.push(match);
+                    });
+                }
+            });
+            addOpts('software-filter', softwareList);
+
+            // KEYWORDS
             let allKeywords = [];
             data.forEach(d => {
                 if(d.keywords && Array.isArray(d.keywords)) {
@@ -259,7 +263,15 @@
                 const matchSearch = txt.includes(search);
                 const matchUni = fUni === 'all' || item.university_name === fUni;
                 const matchFmt = fFmt === 'all' || (item.delivery_format && item.delivery_format.includes(fFmt));
-                const matchSoft = fSoft === 'all' || (item.required_software && item.required_software.includes(fSoft));
+                
+                // Smart Software Match (Check explicit column OR keywords)
+                let matchSoft = true;
+                if(fSoft !== 'all') {
+                    const hasExplicit = item.required_software && item.required_software.includes(fSoft);
+                    const hasKeyword = item.keywords && item.keywords.includes(fSoft);
+                    matchSoft = hasExplicit || hasKeyword;
+                }
+
                 const matchKw = fKw === 'all' || (item.keywords && item.keywords.includes(fKw));
                 
                 let matchPre = true;
@@ -328,7 +340,6 @@
                         ${kwHtml}
                         <div class="detail-row"><span class="label">Instructor</span> ${item.instructor_name || 'TBD'}</div>
                         <div class="detail-row"><span class="label">Format</span> ${item.delivery_format || 'Unknown'}</div>
-                        <div class="detail-row"><span class="label">Software</span> ${item.required_software ? item.required_software.join(', ') : 'None'}</div>
                         ${pdfHtml}
                         <div class="detail-row" style="margin-top:15px;">
                             <span class="label">Weekly Topics</span>
