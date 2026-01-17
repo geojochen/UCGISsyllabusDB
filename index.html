@@ -42,8 +42,6 @@
             font-family: monospace;
             white-space: pre-wrap;
         }
-        #status-panel.error { background: #ffebee; color: #c62828; border-color: #ef5350; }
-        #status-panel.success { background: #e8f5e9; color: #2e7d32; border-color: #a5d6a7; }
 
         /* FILTERS */
         .filter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
@@ -75,7 +73,7 @@
         .detail-row { margin-top: 8px; }
         .label { font-weight: bold; color: #333; display: block; font-size: 11px; text-transform: uppercase; margin-bottom: 2px; }
 
-        /* TAGS (KEYWORDS) */
+        /* TAGS */
         .tag-container { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
         .kw-badge { 
             background: #e1f5fe; color: #0277bd; 
@@ -149,10 +147,24 @@
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlnenhoaG1ja2Z5ZXl3ZGZyd2NwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0Nzc2MTAsImV4cCI6MjA4NDA1MzYxMH0.JrSW1-DyrduhK1_iAC-HgcwnxeDpzn98AVoriG0bTXw';
         const GITHUB_PDF_BASE_URL = 'https://geojochen.github.io/UCGISsyllabusDB/pdfs/';
 
-        // --------------------------------------------------------
-        // LOGIC START
-        // --------------------------------------------------------
-        
+        // --- THE "MEGA-BUCKET" DICTIONARY ---
+        // Maps the dropdown label to a list of "trigger words" (lowercase) to scan for.
+        const SOFTWARE_BUCKETS = {
+            "ArcGIS Ecosystem": ["arcgis", "arcmap", "esri", "arc pro", "arcview", "survey123", "collector", "field maps", "storymaps", "experience builder", "web appbuilder", "dashboards", "arcade"],
+            "QGIS": ["qgis", "quantum gis"],
+            "Python & Data Science": ["python", "arcpy", "pandas", "geopandas", "numpy", "jupyter", "matplotlib", "scipy", "anaconda", "colab", "pycharm", "vs code"],
+            "R & RStudio": [" r ", "rstudio", "cran", "tidyverse", "ggplot2"], 
+            "Remote Sensing (ENVI/ERDAS)": ["envi", "erdas", "imagine", "remote sensing", "hyperspectral", "multispectral", "sentinel", "landsat"],
+            "Drone & Photogrammetry": ["pix4d", "drone2map", "structure-from-motion", "uav", "drone", "trimble", "lidar"],
+            "Web GIS & Dev": ["leaflet", "mapbox", "javascript", "html", "css", "web app", "d3.js", "turf.js", "cesium", "geoserver", "openlayers"],
+            "Databases (SQL/PostGIS)": ["sql", "postgis", "postgresql", "postgres", "sqlite", "spatialite", "mongodb", "rdbms", "database"],
+            "Google Earth & Engine": ["google earth", "earth engine", "gee", "kml"],
+            "Spatial Stats (GeoDa/SPSS)": ["geoda", "spss", "sas", "gwr", "spatial statistics", "moran"],
+            "Graphics (Adobe/Blender)": ["illustrator", "photoshop", "adobe", "blender", "inkscape", "graphics"],
+            "CAD & Engineering": ["autocad", "civil 3d", "revit", "bim", "engineering"],
+            "Modeling (Systems/ABM)": ["vensim", "netlogo", "agent-based", "system dynamics", "maxent", "solim"]
+        };
+
         const map = L.map('map').setView([39.8, -98.5], 4); 
         L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
             attribution: '© OpenStreetMap'
@@ -164,39 +176,26 @@
         
         async function init() {
             log("Connecting to Supabase...");
-            
             try {
                 if (!window.supabase) throw new Error("Supabase library failed to load.");
-                
                 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-                
                 const { data, error } = await supabase.from('syllabus_map_view').select('*');
                 
                 if (error) throw error;
                 if (!data || data.length === 0) throw new Error("Connected, but DB is empty.");
 
-                // Safe Sort
+                // Alphabetical Sort by University
                 globalData = data.sort((a, b) => {
-                    const nameA = a.university_name || "";
-                    const nameB = b.university_name || "";
-                    return nameA.localeCompare(nameB);
+                    return (a.university_name || "").localeCompare(b.university_name || "");
                 });
                 
                 log(`System Ready: ${data.length} courses loaded.`, 'success');
                 
-                // Wrap in Try/Catch to prevent filter errors from crashing the whole map
-                try {
-                    populateFilters(globalData);
-                } catch (e) {
-                    console.error("Filter Logic Error:", e);
-                    log("Warning: Filters failed to build (Check Console)", 'error');
-                }
-                
+                populateFilters(globalData);
                 render(globalData);
 
             } catch (err) {
                 log("Error: " + err.message, 'error');
-                console.error(err);
             }
         }
 
@@ -204,11 +203,7 @@
             const addOpts = (id, items, counts) => {
                 const sel = document.getElementById(id);
                 if(!sel) return;
-                
-                // Clear existing (keep the first 'All' option)
-                sel.innerHTML = sel.firstElementChild.outerHTML;
-
-                // Sort items
+                sel.innerHTML = sel.firstElementChild.outerHTML; 
                 const uniqueItems = [...new Set(items)].filter(Boolean).sort();
                 
                 uniqueItems.forEach(i => {
@@ -223,59 +218,38 @@
                 });
             };
 
-            // 1. Univ & Format
+            // 1. Basic Filters
             addOpts('uni-filter', data.map(d => d.university_name));
             addOpts('format-filter', data.map(d => d.delivery_format));
 
-            // 2. SOFTWARE (Robust Fuzzy Matching)
-            const softwareMap = [
-                { name: "ArcGIS", triggers: ["arcgis", "arcmap", "esri", "arc pro"] },
-                { name: "QGIS", triggers: ["qgis"] },
-                { name: "Python", triggers: ["python", "arcpy", "pandas"] },
-                { name: "R", triggers: [" r ", "rstudio", "cran"] },
-                { name: "SQL", triggers: ["sql", "postgis", "postgres"] },
-                { name: "Remote Sensing", triggers: ["envi", "erdas", "remotesensing", "lidar"] },
-                { name: "Web GIS", triggers: ["leaflet", "mapbox", "javascript", "html", "css"] }
-            ];
+            // 2. SOFTWARE BUCKETS (Exhaustive List)
+            let bucketCounts = {};
+            // Init buckets to 0
+            for(let key in SOFTWARE_BUCKETS) bucketCounts[key] = 0;
 
-            let swCounts = {};
-            
-            data.forEach(course => {
-                let foundThisCourse = new Set();
-                
-                // Helper to check text against triggers
-                const check = (text) => {
-                    if (!text) return;
-                    text = text.toLowerCase();
-                    softwareMap.forEach(sw => {
-                        sw.triggers.forEach(trig => {
-                            if (text.includes(trig)) foundThisCourse.add(sw.name);
-                        });
-                    });
-                };
+            data.forEach(d => {
+                // Combine text for deep scanning
+                const blob = (
+                    (d.required_software || []).join(" ") + " " + 
+                    (d.keywords || []).join(" ") + " " + 
+                    d.title + " " + 
+                    d.description
+                ).toLowerCase();
 
-                // Check Explicit Column
-                if (course.required_software && Array.isArray(course.required_software)) {
-                    course.required_software.forEach(s => check(s));
+                // Check buckets
+                for (let bucketName in SOFTWARE_BUCKETS) {
+                    const triggers = SOFTWARE_BUCKETS[bucketName];
+                    if (triggers.some(t => blob.includes(t))) {
+                        bucketCounts[bucketName]++;
+                    }
                 }
-
-                // Check Keywords
-                if (course.keywords && Array.isArray(course.keywords)) {
-                    course.keywords.forEach(k => check(k));
-                }
-
-                // Add to Global Counts
-                foundThisCourse.forEach(swName => {
-                    swCounts[swName] = (swCounts[swName] || 0) + 1;
-                });
             });
+            
+            // Only show active buckets
+            const activeBuckets = Object.keys(bucketCounts).filter(k => bucketCounts[k] > 0);
+            addOpts('software-filter', activeBuckets, bucketCounts);
 
-            // Convert to list for dropdown
-            const softwareList = Object.keys(swCounts);
-            addOpts('software-filter', softwareList, swCounts);
-
-
-            // 3. KEYWORDS (With counts)
+            // 3. KEYWORDS
             let kwCounts = {};
             data.forEach(d => {
                 if(d.keywords && Array.isArray(d.keywords)) {
@@ -284,7 +258,7 @@
                     });
                 }
             });
-            const allKeywords = Object.keys(kwCounts);
+            const allKeywords = Object.keys(kwCounts).sort();
             addOpts('keyword-filter', allKeywords, kwCounts);
         }
 
@@ -298,42 +272,22 @@
 
             const filtered = globalData.filter(item => {
                 const kwString = (item.keywords || []).join(' ');
-                
-                const txt = (
-                    item.title + 
-                    item.course_code + 
-                    (item.instructor_name || '') +
-                    kwString
+                const blob = (
+                    item.title + " " + item.course_code + " " + 
+                    (item.instructor_name || "") + " " + kwString + " " +
+                    (item.required_software || []).join(" ") + " " + 
+                    item.description
                 ).toLowerCase();
                 
-                const matchSearch = txt.includes(search);
+                const matchSearch = blob.includes(search);
                 const matchUni = fUni === 'all' || item.university_name === fUni;
                 const matchFmt = fFmt === 'all' || (item.delivery_format && item.delivery_format.includes(fFmt));
                 
-                // Smart Software Match (Re-using triggers logic essentially)
+                // --- SOFTWARE BUCKET FILTER ---
                 let matchSoft = true;
                 if(fSoft !== 'all') {
-                    // Triggers for selected software
-                    const softMap = [
-                        { name: "ArcGIS", triggers: ["arcgis", "arcmap", "esri", "arc pro"] },
-                        { name: "QGIS", triggers: ["qgis"] },
-                        { name: "Python", triggers: ["python", "arcpy", "pandas"] },
-                        { name: "R", triggers: [" r ", "rstudio", "cran"] },
-                        { name: "SQL", triggers: ["sql", "postgis", "postgres"] },
-                        { name: "Remote Sensing", triggers: ["envi", "erdas", "remotesensing", "lidar"] },
-                        { name: "Web GIS", triggers: ["leaflet", "mapbox", "javascript", "html", "css"] }
-                    ];
-                    
-                    const target = softMap.find(s => s.name === fSoft);
-                    const triggers = target ? target.triggers : [fSoft.toLowerCase()]; // Fallback
-
-                    // Check if ANY trigger exists in this course
-                    const combinedText = (
-                        (item.required_software || []).join(' ') + " " + 
-                        (item.keywords || []).join(' ')
-                    ).toLowerCase();
-
-                    matchSoft = triggers.some(t => combinedText.includes(t));
+                    const triggers = SOFTWARE_BUCKETS[fSoft] || [fSoft.toLowerCase()];
+                    matchSoft = triggers.some(t => blob.includes(t));
                 }
 
                 const matchKw = fKw === 'all' || (item.keywords && item.keywords.includes(fKw));
