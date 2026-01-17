@@ -48,7 +48,7 @@
         /* FILTERS */
         .filter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
         select, input { width: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 4px; font-size: 13px; }
-
+        
         /* RESULTS */
         #results-area { flex-grow: 1; overflow-y: auto; padding: 15px; background: #fdfdfd; }
 
@@ -75,6 +75,14 @@
         .detail-row { margin-top: 8px; }
         .label { font-weight: bold; color: #333; display: block; font-size: 11px; text-transform: uppercase; margin-bottom: 2px; }
 
+        /* TAGS (KEYWORDS) */
+        .tag-container { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+        .kw-badge { 
+            background: #e1f5fe; color: #0277bd; 
+            padding: 2px 6px; border-radius: 4px; 
+            font-size: 10px; font-weight: 600; border: 1px solid #b3e5fc;
+        }
+
         /* PDF BUTTON */
         .pdf-btn {
             display: inline-flex; align-items: center; gap: 5px;
@@ -100,16 +108,15 @@
             
             <div id="status-panel">System Starting...</div>
             
-            <input type="text" id="search-box" placeholder="Search title, software, textbook...">
+            <input type="text" id="search-box" placeholder="Search title, keywords (e.g. Lidar, Python)...">
             
             <div class="filter-grid">
-                <select id="uni-filter"><option value="all">All Universities</option></select>
-                <select id="format-filter"><option value="all">Any Format</option></select>
-                <select id="software-filter"><option value="all">Any Software</option></select>
-                <select id="prereq-filter"><option value="all">All Levels</option>
-                    <option value="none">No Prerequisites</option>
-                    <option value="has">Has Prerequisites</option>
+                <select id="keyword-filter" style="grid-column: span 2; background-color: #fffde7; border-color: #fdd835;">
+                    <option value="all">📚 Filter by Topic (All)</option>
                 </select>
+
+                <select id="uni-filter"><option value="all">All Universities</option></select>
+                <select id="software-filter"><option value="all">Any Software</option></select>
             </div>
             <p style="margin-top:10px; font-size:12px; color:#666;">Showing <b id="course-count">0</b> courses</p>
         </div>
@@ -123,7 +130,7 @@
             const el = document.getElementById('status-panel');
             if(el) {
                 el.className = 'error';
-                el.innerText = `CRITICAL ERROR:\n${msg}\nLine: ${line}\n\n(Check your Supabase Keys for line breaks!)`;
+                el.innerText = `CRITICAL ERROR:\n${msg}\nLine: ${line}`;
             }
             return false;
         };
@@ -143,10 +150,6 @@
         // --------------------------------------------------------
         // CONFIGURATION - PASTE KEYS HERE
         // --------------------------------------------------------
-        // We use backticks (`) to allow multi-line pastes safely, 
-        // then we clean them up in code.
-        // --------------------------------------------------------
-        
         const SUPABASE_URL = 'https://ygzxhhmckfyeywdfrwcp.supabase.co'; 
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlnenhoaG1ja2Z5ZXl3ZGZyd2NwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0Nzc2MTAsImV4cCI6MjA4NDA1MzYxMH0.JrSW1-DyrduhK1_iAC-HgcwnxeDpzn98AVoriG0bTXw';
         const GITHUB_PDF_BASE_URL = 'https://geojochen.github.io/UCGISsyllabusDB/pdfs/';
@@ -167,12 +170,6 @@
         let globalData = [];
         
         async function init() {
-            log("Cleaning Keys...");
-            
-            // CLEAN UP KEYS (Removes spaces/newlines if you pasted them by accident)
-        const SUPABASE_URL = 'https://ygzxhhmckfyeywdfrwcp.supabase.co'; 
-        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlnenhoaG1ja2Z5ZXl3ZGZyd2NwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0Nzc2MTAsImV4cCI6MjA4NDA1MzYxMH0.JrSW1-DyrduhK1_iAC-HgcwnxeDpzn98AVoriG0bTXw';
-
             if(SUPABASE_URL.includes("YOUR_SUPABASE")) {
                 log("Error: You have not replaced the placeholder keys yet.", 'error');
                 return;
@@ -183,18 +180,11 @@
             try {
                 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
                 
-                // Fetch Data
+                // Fetch Data (Including the new 'keywords' and 'schedule' columns from the View)
                 const { data, error } = await supabase.from('syllabus_map_view').select('*');
                 
-                if (error) {
-                    log("DB Error: " + error.message, 'error');
-                    return;
-                }
-
-                if (!data || data.length === 0) {
-                    log("Connected, but found 0 courses.\nDid you run the SQL INSERT scripts?", 'error');
-                    return;
-                }
+                if (error) throw error;
+                if (!data || data.length === 0) throw new Error("No data found in DB.");
 
                 globalData = data;
                 log(`System Ready: ${data.length} courses loaded.`, 'success');
@@ -217,41 +207,50 @@
                 });
             };
 
+            // 1. Universities
             addOpts('uni-filter', data.map(d => d.university_name));
-            addOpts('format-filter', data.map(d => d.delivery_format));
             
+            // 2. Software
             let software = [];
             data.forEach(d => { if(d.required_software) software.push(...d.required_software); });
             addOpts('software-filter', software);
+
+            // 3. KEYWORDS (The New Dropdown)
+            let allKeywords = [];
+            data.forEach(d => {
+                if(d.keywords && Array.isArray(d.keywords)) {
+                    allKeywords.push(...d.keywords);
+                }
+            });
+            // Add to the Topic dropdown
+            addOpts('keyword-filter', allKeywords);
         }
 
         function applyFilters() {
             const search = document.getElementById('search-box').value.toLowerCase();
             const fUni = document.getElementById('uni-filter').value;
-            const fFmt = document.getElementById('format-filter').value;
             const fSoft = document.getElementById('software-filter').value;
-            const fPre = document.getElementById('prereq-filter').value;
+            const fKw = document.getElementById('keyword-filter').value; // New Filter
 
             const filtered = globalData.filter(item => {
-                // Expanded Search: Title, Code, Instructor, Textbooks, Topics
+                // Expanded Search: Now checks KEYWORDS array too!
+                const kwString = (item.keywords || []).join(' ');
+                
                 const txt = (
                     item.title + 
                     item.course_code + 
                     (item.instructor_name || '') +
-                    (JSON.stringify(item.textbooks) || '') +
-                    (JSON.stringify(item.schedule) || '')
+                    kwString
                 ).toLowerCase();
                 
                 const matchSearch = txt.includes(search);
                 const matchUni = fUni === 'all' || item.university_name === fUni;
-                const matchFmt = fFmt === 'all' || (item.delivery_format && item.delivery_format.includes(fFmt));
                 const matchSoft = fSoft === 'all' || (item.required_software && item.required_software.includes(fSoft));
                 
-                let matchPre = true;
-                if (fPre === 'none') matchPre = !item.prerequisites;
-                if (fPre === 'has') matchPre = !!item.prerequisites;
+                // Dropdown Logic
+                const matchKw = fKw === 'all' || (item.keywords && item.keywords.includes(fKw));
 
-                return matchSearch && matchUni && matchFmt && matchSoft && matchPre;
+                return matchSearch && matchUni && matchSoft && matchKw;
             });
 
             render(filtered);
@@ -281,66 +280,10 @@
                     ? `<a href="${GITHUB_PDF_BASE_URL}${item.pdf_filename}" target="_blank" class="pdf-btn"><i class="fa-regular fa-file-pdf"></i> View Syllabus PDF</a>` 
                     : '';
 
+                // Schedule Table
                 let schedHtml = '';
-                if(item.schedule && Array.isArray(item.schedule)) {
+                if(item.schedule && Array.isArray(item.schedule) && item.schedule.length > 0) {
                     schedHtml = '<table class="sched-table">';
                     item.schedule.forEach(row => {
                          const time = row.week ? `Week ${row.week}` : (row.date || '');
-                         schedHtml += `<tr><td class="week-col">${time}</td><td>${row.topic}</td></tr>`;
-                    });
-                    schedHtml += '</table>';
-                }
-
-                // Extract textbook title if JSON
-                let bookTxt = 'None';
-                if(item.textbooks) {
-                    if(typeof item.textbooks === 'string') bookTxt = item.textbooks;
-                    else if(item.textbooks.Title) bookTxt = item.textbooks.Title;
-                    else bookTxt = JSON.stringify(item.textbooks).slice(0,50)+'...';
-                }
-
-                div.innerHTML = `
-                    <div class="card-header" onclick="toggleCard(this, ${item.lat}, ${item.lon})">
-                        <div>
-                            <h3>${item.course_code}</h3>
-                            <p>${item.title}</p>
-                            <span class="uni-tag">${item.university_name}</span>
-                        </div>
-                        <i class="fa-solid fa-chevron-down" style="color:#aaa"></i>
-                    </div>
-                    <div class="card-details">
-                        <div class="detail-row"><span class="label">Instructor</span> ${item.instructor_name || 'TBD'}</div>
-                        <div class="detail-row"><span class="label">Prerequisites</span> ${item.prerequisites || 'None'}</div>
-                        <div class="detail-row"><span class="label">Software</span> ${item.required_software ? item.required_software.join(', ') : 'None'}</div>
-                        <div class="detail-row"><span class="label">Textbook</span> ${bookTxt}</div>
-                        ${pdfHtml}
-                        <div class="detail-row" style="margin-top:15px;">
-                            <span class="label">Weekly Topics</span>
-                            ${schedHtml || '<em style="color:#999">No detailed schedule available.</em>'}
-                        </div>
-                    </div>
-                `;
-                container.appendChild(div);
-            });
-
-            if(data.length > 0 && bounds.isValid()) map.fitBounds(bounds, {padding:[50,50], maxZoom:12});
-        }
-
-        window.toggleCard = function(header, lat, lon) {
-            const card = header.parentElement;
-            const isActive = card.classList.contains('active');
-            document.querySelectorAll('.card').forEach(c => c.classList.remove('active'));
-            if(!isActive) {
-                card.classList.add('active');
-                if(lat && lon) map.flyTo([lat, lon], 14);
-            }
-        };
-
-        ['search-box', 'uni-filter', 'format-filter', 'software-filter', 'prereq-filter'].forEach(id => {
-            document.getElementById(id).addEventListener(id === 'search-box' ? 'input' : 'change', applyFilters);
-        });
-
-        init();
-    </script>
-</body>
-</html>
+                         schedHtml += `<tr><td class="week-col">${time}</td>
