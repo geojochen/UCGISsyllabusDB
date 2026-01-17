@@ -153,4 +153,238 @@
         // LOGIC START
         // --------------------------------------------------------
         
-        const map =
+        const map = L.map('map').setView([39.8, -98.5], 4); 
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+        let markers = L.layerGroup().addTo(map);
+        setTimeout(() => map.invalidateSize(), 500);
+
+        let globalData = [];
+        
+        async function init() {
+            log("Connecting to Supabase...");
+            
+            try {
+                if (!window.supabase) throw new Error("Supabase library failed to load.");
+                
+                const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+                
+                const { data, error } = await supabase.from('syllabus_map_view').select('*');
+                
+                if (error) throw error;
+                if (!data || data.length === 0) throw new Error("Connected, but DB is empty.");
+
+                // --- SAFE SORT ---
+                // We use '|| ""' to prevent crashes if a university name is missing
+                globalData = data.sort((a, b) => {
+                    const nameA = a.university_name || "";
+                    const nameB = b.university_name || "";
+                    return nameA.localeCompare(nameB);
+                });
+                
+                log(`System Ready: ${data.length} courses loaded.`, 'success');
+                
+                populateFilters(globalData);
+                render(globalData);
+
+            } catch (err) {
+                log("Error: " + err.message, 'error');
+                console.error(err);
+                alert("App Error: " + err.message); // Alert user if it fails
+            }
+        }
+
+        function populateFilters(data) {
+            try {
+                const addOpts = (id, items) => {
+                    const sel = document.getElementById(id);
+                    if(!sel) return;
+                    
+                    const counts = {};
+                    items.forEach(x => { if(x) counts[x] = (counts[x] || 0) + 1; });
+                    
+                    const uniqueItems = [...new Set(items)].filter(Boolean).sort();
+                    
+                    uniqueItems.forEach(i => {
+                        const opt = document.createElement('option');
+                        opt.value = i; 
+                        if (id === 'keyword-filter' || id === 'software-filter') {
+                            opt.innerText = `${i} (${counts[i]})`;
+                        } else {
+                            opt.innerText = i;
+                        }
+                        sel.appendChild(opt);
+                    });
+                };
+
+                // Safe mappings
+                addOpts('uni-filter', data.map(d => d.university_name));
+                addOpts('format-filter', data.map(d => d.delivery_format));
+
+                // --- FUZZY MATCH SOFTWARE ---
+                const knownSoftware = ["ArcGIS", "QGIS", "Python", "R", "SQL", "PostGIS", "ENVI", "ERDAS", "Leaflet", "JavaScript", "GeoDa", "Tableau", "SPSS", "SAS", "Idrisi", "Manifold", "Mapbox"];
+                let softwareList = [];
+
+                data.forEach(d => { 
+                    // Explicit
+                    if(d.required_software && Array.isArray(d.required_software)) {
+                        softwareList.push(...d.required_software);
+                    }
+                    // Fuzzy Keyword Match
+                    if(d.keywords && Array.isArray(d.keywords)) {
+                        d.keywords.forEach(k => {
+                            if (!k) return;
+                            const match = knownSoftware.find(sw => k.toLowerCase().includes(sw.toLowerCase()));
+                            if(match) softwareList.push(match);
+                        });
+                    }
+                });
+                addOpts('software-filter', softwareList);
+
+                // KEYWORDS
+                let allKeywords = [];
+                data.forEach(d => {
+                    if(d.keywords && Array.isArray(d.keywords)) {
+                        allKeywords.push(...d.keywords);
+                    }
+                });
+                addOpts('keyword-filter', allKeywords);
+
+            } catch(e) {
+                console.error("Filter Error:", e);
+                log("Warning: Filters failed to load.", 'error');
+            }
+        }
+
+        function applyFilters() {
+            const search = document.getElementById('search-box').value.toLowerCase();
+            const fUni = document.getElementById('uni-filter').value;
+            const fFmt = document.getElementById('format-filter').value;
+            const fSoft = document.getElementById('software-filter').value;
+            const fPre = document.getElementById('prereq-filter').value;
+            const fKw = document.getElementById('keyword-filter').value;
+
+            const filtered = globalData.filter(item => {
+                const kwString = (item.keywords || []).join(' ');
+                
+                const txt = (
+                    item.title + 
+                    item.course_code + 
+                    (item.instructor_name || '') +
+                    kwString
+                ).toLowerCase();
+                
+                const matchSearch = txt.includes(search);
+                const matchUni = fUni === 'all' || item.university_name === fUni;
+                const matchFmt = fFmt === 'all' || (item.delivery_format && item.delivery_format.includes(fFmt));
+                
+                // Smart Software Match (Fuzzy)
+                let matchSoft = true;
+                if(fSoft !== 'all') {
+                    // Check explicit
+                    const explicit = item.required_software && item.required_software.includes(fSoft);
+                    // Check fuzzy keywords
+                    const fuzzy = item.keywords && item.keywords.some(k => k && k.toLowerCase().includes(fSoft.toLowerCase()));
+                    matchSoft = explicit || fuzzy;
+                }
+
+                const matchKw = fKw === 'all' || (item.keywords && item.keywords.includes(fKw));
+                
+                let matchPre = true;
+                if (fPre === 'none') matchPre = !item.prerequisites;
+                if (fPre === 'has') matchPre = !!item.prerequisites;
+
+                return matchSearch && matchUni && matchFmt && matchSoft && matchPre && matchKw;
+            });
+
+            render(filtered);
+        }
+
+        function render(data) {
+            document.getElementById('course-count').innerText = data.length;
+            markers.clearLayers();
+            const container = document.getElementById('results-area');
+            container.innerHTML = '';
+            let bounds = L.latLngBounds();
+
+            data.forEach(item => {
+                if (item.lat && item.lon) {
+                    const m = L.marker([item.lat, item.lon])
+                        .bindPopup(`<b>${item.course_code}</b><br>${item.university_name}`);
+                    m.addTo(markers);
+                    bounds.extend([item.lat, item.lon]);
+                }
+
+                const div = document.createElement('div');
+                div.className = 'card';
+                
+                const pdfHtml = item.pdf_filename 
+                    ? `<a href="${GITHUB_PDF_BASE_URL}${item.pdf_filename}" target="_blank" class="pdf-btn"><i class="fa-regular fa-file-pdf"></i> View Syllabus PDF</a>` 
+                    : '';
+
+                let schedHtml = '';
+                if(item.schedule && Array.isArray(item.schedule) && item.schedule.length > 0) {
+                    schedHtml = '<table class="sched-table">';
+                    item.schedule.forEach(row => {
+                         const time = row.week ? `Week ${row.week}` : (row.date || '');
+                         schedHtml += `<tr><td class="week-col">${time}</td><td>${row.topic}</td></tr>`;
+                    });
+                    schedHtml += '</table>';
+                } else {
+                    schedHtml = '<em style="color:#999">No detailed schedule available.</em>';
+                }
+
+                let kwHtml = '';
+                if(item.keywords && item.keywords.length > 0) {
+                    kwHtml = '<div class="tag-container">';
+                    item.keywords.forEach(tag => {
+                        kwHtml += `<span class="kw-badge">${tag}</span>`;
+                    });
+                    kwHtml += '</div>';
+                }
+
+                div.innerHTML = `
+                    <div class="card-header" onclick="toggleCard(this, ${item.lat}, ${item.lon})">
+                        <div>
+                            <h3>${item.course_code}</h3>
+                            <p>${item.title}</p>
+                            <span class="uni-tag">${item.university_name}</span>
+                        </div>
+                        <i class="fa-solid fa-chevron-down" style="color:#aaa"></i>
+                    </div>
+                    <div class="card-details">
+                        ${kwHtml}
+                        <div class="detail-row"><span class="label">Instructor</span> ${item.instructor_name || 'TBD'}</div>
+                        <div class="detail-row"><span class="label">Format</span> ${item.delivery_format || 'Unknown'}</div>
+                        ${pdfHtml}
+                        <div class="detail-row" style="margin-top:15px;">
+                            <span class="label">Weekly Topics</span>
+                            ${schedHtml}
+                        </div>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+
+            if(data.length > 0 && bounds.isValid()) map.fitBounds(bounds, {padding:[50,50], maxZoom:12});
+        }
+
+        window.toggleCard = function(header, lat, lon) {
+            const card = header.parentElement;
+            const isActive = card.classList.contains('active');
+            document.querySelectorAll('.card').forEach(c => c.classList.remove('active'));
+            if(!isActive) {
+                card.classList.add('active');
+                if(lat && lon) map.flyTo([lat, lon], 14);
+            }
+        };
+
+        ['search-box', 'uni-filter', 'format-filter', 'software-filter', 'prereq-filter', 'keyword-filter'].forEach(id => {
+            document.getElementById(id).addEventListener(id === 'search-box' ? 'input' : 'change', applyFilters);
+        });
+
+        init();
+    </script>
+</body>
+</html>
