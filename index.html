@@ -175,7 +175,7 @@
                 if (error) throw error;
                 if (!data || data.length === 0) throw new Error("Connected, but DB is empty.");
 
-                // Sort Alphabetically
+                // Safe Sort
                 globalData = data.sort((a, b) => {
                     const nameA = a.university_name || "";
                     const nameB = b.university_name || "";
@@ -184,51 +184,254 @@
                 
                 log(`System Ready: ${data.length} courses loaded.`, 'success');
                 
-                populateFilters(globalData);
+                // Wrap in Try/Catch to prevent filter errors from crashing the whole map
+                try {
+                    populateFilters(globalData);
+                } catch (e) {
+                    console.error("Filter Logic Error:", e);
+                    log("Warning: Filters failed to build (Check Console)", 'error');
+                }
+                
                 render(globalData);
 
             } catch (err) {
                 log("Error: " + err.message, 'error');
                 console.error(err);
-                alert("App Error: " + err.message);
             }
         }
 
         function populateFilters(data) {
-            try {
-                const addOpts = (id, items, counts) => {
-                    const sel = document.getElementById(id);
-                    if(!sel) return;
-                    
-                    // Clear existing options except first
-                    sel.innerHTML = sel.firstElementChild.outerHTML;
+            const addOpts = (id, items, counts) => {
+                const sel = document.getElementById(id);
+                if(!sel) return;
+                
+                // Clear existing (keep the first 'All' option)
+                sel.innerHTML = sel.firstElementChild.outerHTML;
 
-                    // If items are objects (software), sort by count descending
-                    // If items are strings, sort A-Z
-                    const uniqueItems = [...new Set(items)].filter(Boolean).sort();
-                    
-                    uniqueItems.forEach(i => {
-                        const opt = document.createElement('option');
-                        opt.value = i; 
-                        
-                        if (counts && counts[i] !== undefined) {
-                            opt.innerText = `${i} (${counts[i]})`;
-                        } else {
-                            opt.innerText = i;
-                        }
-                        sel.appendChild(opt);
+                // Sort items
+                const uniqueItems = [...new Set(items)].filter(Boolean).sort();
+                
+                uniqueItems.forEach(i => {
+                    const opt = document.createElement('option');
+                    opt.value = i; 
+                    if (counts && counts[i] !== undefined) {
+                        opt.innerText = `${i} (${counts[i]})`;
+                    } else {
+                        opt.innerText = i;
+                    }
+                    sel.appendChild(opt);
+                });
+            };
+
+            // 1. Univ & Format
+            addOpts('uni-filter', data.map(d => d.university_name));
+            addOpts('format-filter', data.map(d => d.delivery_format));
+
+            // 2. SOFTWARE (Robust Fuzzy Matching)
+            const softwareMap = [
+                { name: "ArcGIS", triggers: ["arcgis", "arcmap", "esri", "arc pro"] },
+                { name: "QGIS", triggers: ["qgis"] },
+                { name: "Python", triggers: ["python", "arcpy", "pandas"] },
+                { name: "R", triggers: [" r ", "rstudio", "cran"] },
+                { name: "SQL", triggers: ["sql", "postgis", "postgres"] },
+                { name: "Remote Sensing", triggers: ["envi", "erdas", "remotesensing", "lidar"] },
+                { name: "Web GIS", triggers: ["leaflet", "mapbox", "javascript", "html", "css"] }
+            ];
+
+            let swCounts = {};
+            
+            data.forEach(course => {
+                let foundThisCourse = new Set();
+                
+                // Helper to check text against triggers
+                const check = (text) => {
+                    if (!text) return;
+                    text = text.toLowerCase();
+                    softwareMap.forEach(sw => {
+                        sw.triggers.forEach(trig => {
+                            if (text.includes(trig)) foundThisCourse.add(sw.name);
+                        });
                     });
                 };
 
-                // 1. Universities
-                addOpts('uni-filter', data.map(d => d.university_name));
-                
-                // 2. Format
-                addOpts('format-filter', data.map(d => d.delivery_format));
+                // Check Explicit Column
+                if (course.required_software && Array.isArray(course.required_software)) {
+                    course.required_software.forEach(s => check(s));
+                }
 
-                // 3. KEYWORDS (With counts)
-                let allKeywords = [];
-                let kwCounts = {};
-                data.forEach(d => {
-                    if(d.keywords && Array.isArray(d.keywords)) {
-                        d.
+                // Check Keywords
+                if (course.keywords && Array.isArray(course.keywords)) {
+                    course.keywords.forEach(k => check(k));
+                }
+
+                // Add to Global Counts
+                foundThisCourse.forEach(swName => {
+                    swCounts[swName] = (swCounts[swName] || 0) + 1;
+                });
+            });
+
+            // Convert to list for dropdown
+            const softwareList = Object.keys(swCounts);
+            addOpts('software-filter', softwareList, swCounts);
+
+
+            // 3. KEYWORDS (With counts)
+            let kwCounts = {};
+            data.forEach(d => {
+                if(d.keywords && Array.isArray(d.keywords)) {
+                    d.keywords.forEach(k => {
+                        if(k) kwCounts[k] = (kwCounts[k] || 0) + 1;
+                    });
+                }
+            });
+            const allKeywords = Object.keys(kwCounts);
+            addOpts('keyword-filter', allKeywords, kwCounts);
+        }
+
+        function applyFilters() {
+            const search = document.getElementById('search-box').value.toLowerCase();
+            const fUni = document.getElementById('uni-filter').value;
+            const fFmt = document.getElementById('format-filter').value;
+            const fSoft = document.getElementById('software-filter').value;
+            const fPre = document.getElementById('prereq-filter').value;
+            const fKw = document.getElementById('keyword-filter').value;
+
+            const filtered = globalData.filter(item => {
+                const kwString = (item.keywords || []).join(' ');
+                
+                const txt = (
+                    item.title + 
+                    item.course_code + 
+                    (item.instructor_name || '') +
+                    kwString
+                ).toLowerCase();
+                
+                const matchSearch = txt.includes(search);
+                const matchUni = fUni === 'all' || item.university_name === fUni;
+                const matchFmt = fFmt === 'all' || (item.delivery_format && item.delivery_format.includes(fFmt));
+                
+                // Smart Software Match (Re-using triggers logic essentially)
+                let matchSoft = true;
+                if(fSoft !== 'all') {
+                    // Triggers for selected software
+                    const softMap = [
+                        { name: "ArcGIS", triggers: ["arcgis", "arcmap", "esri", "arc pro"] },
+                        { name: "QGIS", triggers: ["qgis"] },
+                        { name: "Python", triggers: ["python", "arcpy", "pandas"] },
+                        { name: "R", triggers: [" r ", "rstudio", "cran"] },
+                        { name: "SQL", triggers: ["sql", "postgis", "postgres"] },
+                        { name: "Remote Sensing", triggers: ["envi", "erdas", "remotesensing", "lidar"] },
+                        { name: "Web GIS", triggers: ["leaflet", "mapbox", "javascript", "html", "css"] }
+                    ];
+                    
+                    const target = softMap.find(s => s.name === fSoft);
+                    const triggers = target ? target.triggers : [fSoft.toLowerCase()]; // Fallback
+
+                    // Check if ANY trigger exists in this course
+                    const combinedText = (
+                        (item.required_software || []).join(' ') + " " + 
+                        (item.keywords || []).join(' ')
+                    ).toLowerCase();
+
+                    matchSoft = triggers.some(t => combinedText.includes(t));
+                }
+
+                const matchKw = fKw === 'all' || (item.keywords && item.keywords.includes(fKw));
+                
+                let matchPre = true;
+                if (fPre === 'none') matchPre = !item.prerequisites;
+                if (fPre === 'has') matchPre = !!item.prerequisites;
+
+                return matchSearch && matchUni && matchFmt && matchSoft && matchPre && matchKw;
+            });
+
+            render(filtered);
+        }
+
+        function render(data) {
+            document.getElementById('course-count').innerText = data.length;
+            markers.clearLayers();
+            const container = document.getElementById('results-area');
+            container.innerHTML = '';
+            let bounds = L.latLngBounds();
+
+            data.forEach(item => {
+                if (item.lat && item.lon) {
+                    const m = L.marker([item.lat, item.lon])
+                        .bindPopup(`<b>${item.course_code}</b><br>${item.university_name}`);
+                    m.addTo(markers);
+                    bounds.extend([item.lat, item.lon]);
+                }
+
+                const div = document.createElement('div');
+                div.className = 'card';
+                
+                const pdfHtml = item.pdf_filename 
+                    ? `<a href="${GITHUB_PDF_BASE_URL}${item.pdf_filename}" target="_blank" class="pdf-btn"><i class="fa-regular fa-file-pdf"></i> View Syllabus PDF</a>` 
+                    : '';
+
+                let schedHtml = '';
+                if(item.schedule && Array.isArray(item.schedule) && item.schedule.length > 0) {
+                    schedHtml = '<table class="sched-table">';
+                    item.schedule.forEach(row => {
+                         const time = row.week ? `Week ${row.week}` : (row.date || '');
+                         schedHtml += `<tr><td class="week-col">${time}</td><td>${row.topic}</td></tr>`;
+                    });
+                    schedHtml += '</table>';
+                } else {
+                    schedHtml = '<em style="color:#999">No detailed schedule available.</em>';
+                }
+
+                let kwHtml = '';
+                if(item.keywords && item.keywords.length > 0) {
+                    kwHtml = '<div class="tag-container">';
+                    item.keywords.forEach(tag => {
+                        kwHtml += `<span class="kw-badge">${tag}</span>`;
+                    });
+                    kwHtml += '</div>';
+                }
+
+                div.innerHTML = `
+                    <div class="card-header" onclick="toggleCard(this, ${item.lat}, ${item.lon})">
+                        <div>
+                            <h3>${item.course_code}</h3>
+                            <p>${item.title}</p>
+                            <span class="uni-tag">${item.university_name}</span>
+                        </div>
+                        <i class="fa-solid fa-chevron-down" style="color:#aaa"></i>
+                    </div>
+                    <div class="card-details">
+                        ${kwHtml}
+                        <div class="detail-row"><span class="label">Instructor</span> ${item.instructor_name || 'TBD'}</div>
+                        <div class="detail-row"><span class="label">Format</span> ${item.delivery_format || 'Unknown'}</div>
+                        ${pdfHtml}
+                        <div class="detail-row" style="margin-top:15px;">
+                            <span class="label">Weekly Topics</span>
+                            ${schedHtml}
+                        </div>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+
+            if(data.length > 0 && bounds.isValid()) map.fitBounds(bounds, {padding:[50,50], maxZoom:12});
+        }
+
+        window.toggleCard = function(header, lat, lon) {
+            const card = header.parentElement;
+            const isActive = card.classList.contains('active');
+            document.querySelectorAll('.card').forEach(c => c.classList.remove('active'));
+            if(!isActive) {
+                card.classList.add('active');
+                if(lat && lon) map.flyTo([lat, lon], 14);
+            }
+        };
+
+        ['search-box', 'uni-filter', 'format-filter', 'software-filter', 'prereq-filter', 'keyword-filter'].forEach(id => {
+            document.getElementById(id).addEventListener(id === 'search-box' ? 'input' : 'change', applyFilters);
+        });
+
+        init();
+    </script>
+</body>
+</html>
