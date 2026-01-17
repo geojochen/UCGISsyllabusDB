@@ -112,7 +112,7 @@
             
             <div class="filter-grid">
                 <select id="keyword-filter" style="grid-column: span 2; background-color: #fffde7; border-color: #fdd835;">
-                    <option value="all">📚 Filter by Topic (All)</option>
+                    <option value="all">Pick from list of keywords:</option>
                 </select>
 
                 <select id="uni-filter"><option value="all">All Universities</option></select>
@@ -188,11 +188,9 @@
             try {
                 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
                 
-                // Fetch Data
                 const { data, error } = await supabase.from('syllabus_map_view').select('*');
                 
                 if (error) {
-                    // Check specifically for the missing column error
                     if(error.message.includes("keywords")) {
                          throw new Error("Database View Outdated: Run the 'CREATE VIEW' SQL script again.");
                     }
@@ -215,9 +213,21 @@
         function populateFilters(data) {
             const addOpts = (id, items) => {
                 const sel = document.getElementById(id);
-                [...new Set(items)].filter(Boolean).sort().forEach(i => {
+                // Count occurrences for better UX
+                const counts = {};
+                items.forEach(x => { counts[x] = (counts[x] || 0) + 1; });
+                
+                const uniqueItems = [...new Set(items)].filter(Boolean).sort();
+                
+                uniqueItems.forEach(i => {
                     const opt = document.createElement('option');
-                    opt.value = i; opt.innerText = i;
+                    opt.value = i; 
+                    // Add count for software and keywords
+                    if (id === 'keyword-filter' || id === 'software-filter') {
+                        opt.innerText = `${i} (${counts[i]})`;
+                    } else {
+                        opt.innerText = i;
+                    }
                     sel.appendChild(opt);
                 });
             };
@@ -230,147 +240,4 @@
 
             // 3. Software
             let software = [];
-            data.forEach(d => { if(d.required_software) software.push(...d.required_software); });
-            addOpts('software-filter', software);
-
-            // 4. KEYWORDS (Dropdown)
-            let allKeywords = [];
-            data.forEach(d => {
-                if(d.keywords && Array.isArray(d.keywords)) {
-                    allKeywords.push(...d.keywords);
-                }
-            });
-            addOpts('keyword-filter', allKeywords);
-        }
-
-        function applyFilters() {
-            const search = document.getElementById('search-box').value.toLowerCase();
-            const fUni = document.getElementById('uni-filter').value;
-            const fFmt = document.getElementById('format-filter').value;
-            const fSoft = document.getElementById('software-filter').value;
-            const fPre = document.getElementById('prereq-filter').value;
-            const fKw = document.getElementById('keyword-filter').value;
-
-            const filtered = globalData.filter(item => {
-                // Expanded Search
-                const kwString = (item.keywords || []).join(' ');
-                
-                const txt = (
-                    item.title + 
-                    item.course_code + 
-                    (item.instructor_name || '') +
-                    kwString
-                ).toLowerCase();
-                
-                const matchSearch = txt.includes(search);
-                const matchUni = fUni === 'all' || item.university_name === fUni;
-                const matchFmt = fFmt === 'all' || (item.delivery_format && item.delivery_format.includes(fFmt));
-                const matchSoft = fSoft === 'all' || (item.required_software && item.required_software.includes(fSoft));
-                const matchKw = fKw === 'all' || (item.keywords && item.keywords.includes(fKw));
-                
-                let matchPre = true;
-                if (fPre === 'none') matchPre = !item.prerequisites;
-                if (fPre === 'has') matchPre = !!item.prerequisites;
-
-                return matchSearch && matchUni && matchFmt && matchSoft && matchPre && matchKw;
-            });
-
-            render(filtered);
-        }
-
-        function render(data) {
-            document.getElementById('course-count').innerText = data.length;
-            markers.clearLayers();
-            const container = document.getElementById('results-area');
-            container.innerHTML = '';
-            let bounds = L.latLngBounds();
-
-            data.forEach(item => {
-                // Map Marker
-                if (item.lat && item.lon) {
-                    const m = L.marker([item.lat, item.lon])
-                        .bindPopup(`<b>${item.course_code}</b><br>${item.university_name}`);
-                    m.addTo(markers);
-                    bounds.extend([item.lat, item.lon]);
-                }
-
-                // Card
-                const div = document.createElement('div');
-                div.className = 'card';
-                
-                const pdfHtml = item.pdf_filename 
-                    ? `<a href="${GITHUB_PDF_BASE_URL}${item.pdf_filename}" target="_blank" class="pdf-btn"><i class="fa-regular fa-file-pdf"></i> View Syllabus PDF</a>` 
-                    : '';
-
-                // Schedule Table
-                let schedHtml = '';
-                if(item.schedule && Array.isArray(item.schedule) && item.schedule.length > 0) {
-                    schedHtml = '<table class="sched-table">';
-                    item.schedule.forEach(row => {
-                         const time = row.week ? `Week ${row.week}` : (row.date || '');
-                         schedHtml += `<tr><td class="week-col">${time}</td><td>${row.topic}</td></tr>`;
-                    });
-                    schedHtml += '</table>';
-                } else {
-                    schedHtml = '<em style="color:#999">No detailed schedule available.</em>';
-                }
-
-                // Keywords Badges
-                let kwHtml = '';
-                if(item.keywords && item.keywords.length > 0) {
-                    kwHtml = '<div class="tag-container">';
-                    item.keywords.forEach(tag => {
-                        kwHtml += `<span class="kw-badge">${tag}</span>`;
-                    });
-                    kwHtml += '</div>';
-                }
-
-                div.innerHTML = `
-                    <div class="card-header" onclick="toggleCard(this, ${item.lat}, ${item.lon})">
-                        <div>
-                            <h3>${item.course_code}</h3>
-                            <p>${item.title}</p>
-                            <span class="uni-tag">${item.university_name}</span>
-                        </div>
-                        <i class="fa-solid fa-chevron-down" style="color:#aaa"></i>
-                    </div>
-                    <div class="card-details">
-                        ${kwHtml}
-                        
-                        <div class="detail-row"><span class="label">Instructor</span> ${item.instructor_name || 'TBD'}</div>
-                        <div class="detail-row"><span class="label">Format</span> ${item.delivery_format || 'Unknown'}</div>
-                        <div class="detail-row"><span class="label">Prerequisites</span> ${item.prerequisites || 'None'}</div>
-                        <div class="detail-row"><span class="label">Software</span> ${item.required_software ? item.required_software.join(', ') : 'None'}</div>
-                        
-                        ${pdfHtml}
-                        
-                        <div class="detail-row" style="margin-top:15px;">
-                            <span class="label">Weekly Topics</span>
-                            ${schedHtml}
-                        </div>
-                    </div>
-                `;
-                container.appendChild(div);
-            });
-
-            if(data.length > 0 && bounds.isValid()) map.fitBounds(bounds, {padding:[50,50], maxZoom:12});
-        }
-
-        window.toggleCard = function(header, lat, lon) {
-            const card = header.parentElement;
-            const isActive = card.classList.contains('active');
-            document.querySelectorAll('.card').forEach(c => c.classList.remove('active'));
-            if(!isActive) {
-                card.classList.add('active');
-                if(lat && lon) map.flyTo([lat, lon], 14);
-            }
-        };
-
-        ['search-box', 'uni-filter', 'format-filter', 'software-filter', 'prereq-filter', 'keyword-filter'].forEach(id => {
-            document.getElementById(id).addEventListener(id === 'search-box' ? 'input' : 'change', applyFilters);
-        });
-
-        init();
-    </script>
-</body>
-</html>
+            data.forEach(d => { if(d.required_software) software.push(...d.required
